@@ -46,6 +46,7 @@ public class Measure_Cord_Length_Distribution implements PlugInFilter {
 		int length = 0;
 		int materialColor = 0; // black
 		int[] openImageIDList;
+		double oneTenthHeight = 0;
 		
 		boolean materialIsBlack = true;
 		boolean ignoreBorder = true;
@@ -119,8 +120,8 @@ public class Measure_Cord_Length_Distribution implements PlugInFilter {
 		ipMask = WindowManager.getImage(maskImageTitle);
 		maskValue[0] = materialColor;
 		if ( processHorizontal ) {
-			IJ.log( "  processing horizontal lines" );
-
+			IJ.log( "  processing " + String.valueOf( height ) + " horizontal lines" );
+			oneTenthHeight = height/10;
 			for ( int y = 0; y<height; y++ ) {
 				for ( int x = 0; x<width; x++ ) {
 					position++;
@@ -148,6 +149,10 @@ public class Measure_Cord_Length_Distribution implements PlugInFilter {
 						lastValue = value;
 					}
 
+				}
+				if ( y % oneTenthHeight == 0 ) {
+					IJ.log( "processed " + String.valueOf( lineCount ) + " cords after " + String.valueOf( y ) + " Lines");
+					//IJ.log( "Processed " + String.valueOf( lineCount ) + " lines");
 				}
 			}
 		}
@@ -185,7 +190,7 @@ public class Measure_Cord_Length_Distribution implements PlugInFilter {
 				}
 			}
 		}
-
-		IJ.log( "  Done" );
+		
+			IJ.log( "finished! Found " + String.valueOf( lineCount ) + " cords!");
 	}
 }
