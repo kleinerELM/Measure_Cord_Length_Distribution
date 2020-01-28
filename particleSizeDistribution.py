@@ -8,19 +8,17 @@ from tkinter import filedialog
 from subprocess import check_output
 import time
 
-
 import cv2
 import numpy
 
-
-
-
-
+#remove root windows
+root = tk.Tk()
+root.withdraw()
 
 print("#########################################################")
 print("# A Script to process the Particle Size Distribution    #")
 print("#                                                       #")
-print("# © 2019 Florian Kleiner                                #")
+print("# © 2020 Florian Kleiner                                #")
 print("#   Bauhaus-Universität Weimar                          #")
 print("#   F. A. Finger-Institut für Baustoffkunde             #")
 print("#                                                       #")
@@ -30,7 +28,7 @@ print()
 #### directory definitions
 home_dir = os.path.dirname(os.path.realpath(__file__))
 
-outputDirName = "resultsCLD"
+outputDirName = "resultsPSD"
 showDebuggingOutput = False
 
 materialColor = 255#0
@@ -40,6 +38,7 @@ ignoreBorder = True#False#True
 minLength = 1
 sumResultCSV = ''
 pixelWidth = 2.9141 #nm
+CSVdelimiter = "	" # tab
 
 #### process given command line arguments
 def processArguments():
@@ -94,10 +93,19 @@ def processArguments():
 def getPoreDiameter( area ):
     return ( math.sqrt( area /math.pi )*2 )
 
+def getPoreVolume( area ):
+    radius = getPoreDiameter( area )/2
+    return 4/3*(math.pi*(radius**3))
+
+def getPoreSurface( area ):
+    radius = getPoreDiameter( area )/2
+    return (4*math.pi*(radius**2))
+
 def processPSD( directory, filename ):
     global maskPagePos
     global outputDirName
     global sumResultCSV
+    global CSVdelimiter
 
     frame = cv2.imread( directory + "/" + filename )
 
@@ -108,8 +116,8 @@ def processPSD( directory, filename ):
     #binarizes an image
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     ret, frame = cv2.threshold(frame, 127, 255, cv2.THRESH_BINARY)
-
-    frame, contours, hierarchy = cv2.findContours(frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    #frame, contours, hierarchy = cv2.findContours(frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hierarchy = cv2.findContours(frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     areas = []
     for i in range(0, len(contours)):
@@ -122,11 +130,17 @@ def processPSD( directory, filename ):
     #    mass_centres_x.append(int(M['m10']/M['m00']))
     #    mass_centres_y.append(int(M['m01']/M['m00']))
 
-    print( 'Num particles: ' + str( len(contours) ) )
-
+    pos = 0
     for i in range(0, len(contours)):
-        print( 'Area' + str( i + 1 ) + ':'  + str( areas[i] ) )
-        sumResultCSV += str( i + 1 ) + "	" + str( areas[i] ) + "	" + str( getPoreDiameter( areas[i] ) ) + "\n"
+        if ( areas[i] > 0 ):
+            pos += 1
+            diameter = getPoreDiameter( areas[i] )
+            volume = getPoreVolume( areas[i] )
+            surface = getPoreSurface( areas[i] )
+            if ( showDebuggingOutput ) : print( 'Area ' + str( pos ) + ':'  + str( areas[i] ) )
+            sumResultCSV += str( pos ) + CSVdelimiter + str( areas[i] ) + CSVdelimiter + str( diameter ) + CSVdelimiter + str( volume ) + CSVdelimiter + str( surface ) + "\n"
+
+    print( 'Num particles: ' + str( pos ) + ', ignored 0-values: ' + str( len(contours)-pos ) )
 
     #for i in range(0, len(contours)):
     #    print( 'Centre' + str( (i + 1) ) + ':' + str( mass_centres_x[i]) + str( mass_centres_y[i] ) )
@@ -160,8 +174,8 @@ if os.path.isdir( workingDirectory ) :
 
 
 if ( sumResultCSV != '' ):
-    headerLine = "lineCount" + "	" + "length [nm]\n"
-    resultFile = open(workingDirectory + "/" + outputDirName + "/sumCLD.csv","w") 
+    headerLine = "poreNr" + CSVdelimiter + "area [nm^2]" + CSVdelimiter + "diameter [nm]" + CSVdelimiter + "volume [nm^3]" + CSVdelimiter + "surface [nm^2]\n"
+    resultFile = open(workingDirectory + "/" + outputDirName + "/sumPSD.csv","w") 
     resultFile.write( headerLine + sumResultCSV ) 
     resultFile.close() #to change file access modes 
 

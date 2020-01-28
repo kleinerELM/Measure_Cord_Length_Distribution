@@ -9,6 +9,10 @@ from tkinter import filedialog
 from subprocess import check_output
 import time
 
+#remove root windows
+root = tk.Tk()
+root.withdraw()
+
 print("#########################################################")
 print("# A Script to process the Cord Length Distribution of a #")
 print("# masked image                                          #")
@@ -159,6 +163,18 @@ def processDirectionalCLD( im, directory, direction ):
         resultFile.write( headerLine + resultCSV ) 
         resultFile.close() #to change file access modes 
     return resultCSV
+
+def getPoreArea( diameter ):
+    radius = diameter/2
+    return 4/3*(math.pi*(radius**3))
+
+def getPoreVolume( area ):
+    radius = diameter/2
+    return 4/3*(math.pi*(radius**3))
+
+def getPoreSurface( area ):
+    radius = diameter/2
+    return (4*math.pi*(radius**2))
 
 def processCLD( directory, filename ):
     global maskPagePos
