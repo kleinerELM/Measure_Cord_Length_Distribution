@@ -107,11 +107,11 @@ def processDirectionalCLD( im, directory, direction ):
     #indicatorWidth = width/3
     minLength = 1
     resultCSV = ''
-    print( '  processing ' + str( direction ) + ' cord length distribution', end='' )
+    print( '  processing ' + str( direction ) + ' cord length distribution' )#, end='' )
     startTime = int(round(time.time() * 1000))
     if ( direction == 'horizontal' ):
         for y in range(height):
-            #if ( y % indicatorHeight < 1 ): print('.', end='')
+            if ( y % 100 == 0 ): print('  ... line ' + str( y ) + ' of ' + str( height ), end="\r")
             for x in range(width):
                 value = im.getpixel((x,y))
                 borderReached = (x == width-1)
@@ -133,7 +133,7 @@ def processDirectionalCLD( im, directory, direction ):
                 lastValue = value
     elif ( direction == 'vertical' ):
         for x in range(width):
-            #if ( x % indicatorWidth < 1 ): print('.', end='')
+            if ( x % 100 == 0  ): print('  ... line ' + str( x ) + ' of ' + str( height ), end="\r")
             for y in range(height):
                 value = im.getpixel((x,y))
                 borderReached = (y == height-1)

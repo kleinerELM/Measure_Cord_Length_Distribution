@@ -116,9 +116,10 @@ def processPSD( directory, filename ):
     #binarizes an image
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     ret, frame = cv2.threshold(frame, 127, 255, cv2.THRESH_BINARY)
+    if ( showDebuggingOutput ) : print( "Trying to find contours" )
     #frame, contours, hierarchy = cv2.findContours(frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     contours, hierarchy = cv2.findContours(frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
+    
     areas = []
     for i in range(0, len(contours)):
         areas.append(cv2.contourArea(contours[i]))
@@ -130,17 +131,24 @@ def processPSD( directory, filename ):
     #    mass_centres_x.append(int(M['m10']/M['m00']))
     #    mass_centres_y.append(int(M['m01']/M['m00']))
 
+    #if ( not showDebuggingOutput ) : print( '[', end = '' )
     pos = 0
+    progressFactor = 1000
     for i in range(0, len(contours)):
         if ( areas[i] > 0 ):
             pos += 1
             diameter = getPoreDiameter( areas[i] )
             volume = getPoreVolume( areas[i] )
             surface = getPoreSurface( areas[i] )
-            if ( showDebuggingOutput ) : print( 'Area ' + str( pos ) + ':'  + str( areas[i] ) )
+            if ( showDebuggingOutput ) : 
+                print( '  Area ' + str( pos ) + ':'  + str( areas[i] ) )
+            else: 
+                if ( pos % progressFactor == 0 ):
+                    print("  ...processing particle #" + str( pos ), end="\r")
             sumResultCSV += str( pos ) + CSVdelimiter + str( areas[i] ) + CSVdelimiter + str( diameter ) + CSVdelimiter + str( volume ) + CSVdelimiter + str( surface ) + "\n"
+    #if ( not showDebuggingOutput ) : print( ']' )
 
-    print( 'Num particles: ' + str( pos ) + ', ignored 0-values: ' + str( len(contours)-pos ) )
+    print( '  Num particles: ' + str( pos ) + ', ignored 0-values: ' + str( len(contours)-pos ) )
 
     #for i in range(0, len(contours)):
     #    print( 'Centre' + str( (i + 1) ) + ':' + str( mass_centres_x[i]) + str( mass_centres_y[i] ) )
