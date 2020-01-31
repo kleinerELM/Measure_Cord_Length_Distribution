@@ -103,8 +103,6 @@ def processDirectionalCLD( im, directory, direction ):
     usedImageArea = 0
     fullPoreArea = 0
 
-    #indicatorHeight = height/3
-    #indicatorWidth = width/3
     minLength = 1
     resultCSV = ''
     print( '  processing ' + str( direction ) + ' cord length distribution' )#, end='' )
@@ -155,8 +153,8 @@ def processDirectionalCLD( im, directory, direction ):
     else:
         print( "  unknown direction '" + str( direction )+ "'" )
     if ( resultCSV != '' ):
-        print( ", " + str( lineCount ) + " lines measured in " + str( int(round(time.time() * 1000)) -startTime ) + " ms", end='' )
-        print( ", " + str( round(100 / imageArea * usedImageArea, 2) ) + ' of ' + str( round(100 / imageArea * fullPoreArea, 2) ) + " area-% were taken into account"   )
+        print( "   " + str( lineCount ) + " lines measured in " + str( int(round(time.time() * 1000)) -startTime ) + " ms", end='' )
+        print( "   " + str( round(100 / imageArea * usedImageArea, 2) ) + ' of ' + str( round(100 / imageArea * fullPoreArea, 2) ) + " area-% were taken into account"   )
         #print( str( usedImageArea ) + '  ' + str( fullPoreArea ) )
         headerLine = "lineCount" + "	" + "length [nm]" + "\n"#+ "	" + "volume fraction" + "\n"
         resultFile = open(directory + "/" + outputDirName + "/" + filename + "." + direction + ".csv","w") 
@@ -168,11 +166,11 @@ def getPoreArea( diameter ):
     radius = diameter/2
     return 4/3*(math.pi*(radius**3))
 
-def getPoreVolume( area ):
+def getPoreVolume( diameter ):
     radius = diameter/2
     return 4/3*(math.pi*(radius**3))
 
-def getPoreSurface( area ):
+def getPoreSurface( diameter ):
     radius = diameter/2
     return (4*math.pi*(radius**2))
 
