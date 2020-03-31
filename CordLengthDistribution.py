@@ -32,25 +32,24 @@ showDebuggingOutput = False
 
 materialColor = 255#0
 poreColor = 0#255
-maskPagePos = 1     # second image in tiff stack is the masked image
+globMaskPagePos = 1     # second image in tiff stack is the masked image
 ignoreBorder = True#False#True
 minLength = 1
 sumResultCSV = ''
-pixelWidth = 2.9141 #nm
+#pixelWidth = 2.9141 #nm
 
 #### process given command line arguments
 def processArguments():
     global outputDirName
     global showDebuggingOutput
-    global pixelWidth
     global ignoreBorder
     global minLength
     global materialColor
-    global maskPagePos
+    global globMaskPagePos
     argv = sys.argv[1:]
-    usage = sys.argv[0] + " [-h] [-o] [-s] [-p] [-d]"
+    usage = sys.argv[0] + " [-h] [-o] [-p] [-d]"
     try:
-        opts, args = getopt.getopt(argv,"hs:p:o:d",[])
+        opts, args = getopt.getopt(argv,"hp:o:d",[])
     except getopt.GetoptError:
         print( usage )
     for opt, arg in opts:
@@ -58,7 +57,7 @@ def processArguments():
             print( 'usage: ' + usage )
             print( '-h,                  : show this help' )
             print( '-o,                  : setting output directory name [' + outputDirName + ']' )
-            print( '-s,                  : set pixel size [' + str( pixelWidth ) + ' nm per pixel]' )
+            #print( '-s,                  : set pixel size [' + str( pixelWidth ) + ' nm per pixel]' )
             print( '-p,                  : set page position of the mask in a TIFF [' + str( maskPagePos + 1 ) + ']' )
             print( '-d                   : show debug output' )
             print( '' )
@@ -66,34 +65,33 @@ def processArguments():
         elif opt in ("-o"):
             outputDirName = arg
             print( 'changed output directory to ' + outputDirName )
-        elif opt in ("-s"):
-            pixelWidth = float( arg )
+        #elif opt in ("-s"):
+        #    pixelWidth = float( arg )
         elif opt in ("-p"):
-            maskPagePos = int( arg ) -1
-            if ( maskPagePos < 0 ): 
-                maskPagePos = 0
+            globMaskPagePos = int( arg ) -1
+            if ( globMaskPagePos < 0 ): 
+                globMaskPagePos = 0
         elif opt in ("-d"):
             print( 'show debugging output' )
             showDebuggingOutput = True
     # print information for the main settings:
     print( 'Settings:')
-    print( ' - pixel size is set to ' + str( pixelWidth ) + ' nm per pixel')
+    #print( ' - pixel size is set to ' + str( pixelWidth ) + ' nm per pixel')
     if ( ignoreBorder ) : print( ' - areas touching a border will be ignored' )
     else : print( ' - areas touching a border will be included (may be flawed!)' )
     print( ' - ignoring areas smaller than ' + str( minLength ) + ' pixel')
     if ( materialColor == 0 ) : colorName = 'white'
     else: colorName = 'black'
     print( ' - calculating the Cord Length Distribution of ' + colorName + ' areas')
-    if ( maskPagePos == 0 ) : print( ' - expecting a normal b/w TIFF or a multi page TIFF, where the mask is on page 1' )
-    else : print( ' - expecting a multi page Tiff where the mask is on page ' + str( maskPagePos + 1 ) )
+    if ( globMaskPagePos == 0 ) : print( ' - expecting a normal b/w TIFF or a multi page TIFF, where the mask is on page 1' )
+    else : print( ' - expecting a multi page Tiff where the mask is on page ' + str( globMaskPagePos + 1 ) )
     print( '' )
 
-def processDirectionalCLD( im, directory, direction ):
+def processDirectionalCLD( im, scaling, directory, direction ):
     global outputDirName
     global materialColor
     global ignoreBorder
     global minLength
-    global pixelWidth
 
     lineCount = 0
     lastValue = -1      # var to save the last value
@@ -102,6 +100,8 @@ def processDirectionalCLD( im, directory, direction ):
     imageArea = width * height
     usedImageArea = 0
     fullPoreArea = 0
+    pixelWidth = scaling['x'] # TODO Check unit?
+    pixelHeight = scaling['y'] # TODO Check unit?
 
     minLength = 1
     resultCSV = ''
@@ -143,7 +143,7 @@ def processDirectionalCLD( im, directory, direction ):
                         if ( length != width and length > minLength ):
                             lineCount += 1
                             usedImageArea += length
-                            resultCSV += str( lineCount ) + "	" + str( pixelWidth * length ) + "\n"# + "	" + str( length/imageArea ) + "\n"
+                            resultCSV += str( lineCount ) + "	" + str( pixelHeight * length ) + "\n"
                     if ( borderReached ):
                         lastChangedPos = -1
                         lastValue = materialColor
@@ -175,17 +175,62 @@ def getPoreSurface( diameter ):
     return (4*math.pi*(radius**2))
 
 def processCLD( directory, filename ):
-    global maskPagePos
+    global globMaskPagePos
     global outputDirName
     global sumResultCSV
+    
+    scaling = getImageJScaling( filename, directory )
+    pageCnt = 0
+    
     im = Image.open( directory + "/" + filename ) 
+    # check page count in image
+    for i in enumerate(ImageSequence.Iterator(im)):
+        pageCnt +=1
+    if ( pageCnt - 1 < globMaskPagePos ) :
+        print( '  WARNING: The image has only ' + str( pageCnt ) + ' page(s)! Trying to use page 1 as mask.')
+        maskPagePos = 0
+    else:
+        maskPagePos = globMaskPagePos
+
+    # run analysis
     for i, page in enumerate(ImageSequence.Iterator(im)):
         if ( i == maskPagePos ): 
-            sumResultCSV += processDirectionalCLD(im, directory, 'horizontal')
-            sumResultCSV += processDirectionalCLD(im, directory, 'vertical')
+            sumResultCSV += processDirectionalCLD(im, scaling, directory, 'horizontal')
+            sumResultCSV += processDirectionalCLD(im, scaling, directory, 'vertical')
     im.close()
     print()
-    
+
+def getImageJScaling( filename, workingDirectory ):
+    global showDebuggingOutput
+
+    scaling = { 'x' : 1, 'y' : 1, 'unit' : 'px', 'editor':None}
+    with Image.open( workingDirectory + '/' + filename ) as img:
+        #print(filename + ':')
+        if ( 282 in img.tag ) and ( 283 in img.tag ):
+            x_tag = img.tag[282][0]
+            y_tag = img.tag[283][0]
+            scaling['x'] = int( x_tag[1] )/ int( x_tag[0] )
+            scaling['y'] = int( y_tag[1] )/ int( y_tag[0] )
+            #print( x_tag ) #x
+            #print( y_tag ) #y
+        if 270 in img.tag:            
+            # getimagej definitions
+            IJSettingString = img.tag[270][0].split('\n')
+            IJSettingsArray = {}
+            for val in IJSettingString:
+                if ( val != '' ):
+                    setting = val.split('=')
+                    IJSettingsArray[setting[0]] = setting[1]
+            #print(IJSettingsArray)
+            if ( 'ImageJ' in IJSettingsArray ):
+                if ( showDebuggingOutput ): print( '  Image edited using ImageJ ' + IJSettingsArray['ImageJ'] )
+                scaling['editor'] = 'ImageJ ' + IJSettingsArray['ImageJ']
+            if ( 'unit' in IJSettingsArray ):
+                scaling['unit'] = IJSettingsArray['unit']
+                print( '  scaling: ' + str( round( scaling['x'], 4) ) + ' x ' + str( round( scaling['y'], 4) ) + ' ' + scaling['unit'] )
+            else :
+                print( '  unitless scaling: ' + str( round( scaling['x'], 4) ) + ' x ' + str( round( scaling['y'], 4) ) )
+    return scaling
 
 ### actual program start
 processArguments()

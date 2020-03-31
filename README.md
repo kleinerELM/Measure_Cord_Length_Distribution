@@ -19,7 +19,6 @@ Ported to python. The imageJ Plugin seems to generate false results. Start the s
 usage: D:\Nextcloud\Uni\WdB\REM\Fiji Plugins & Macros\Selbstgeschrieben\Measure_Cord_Length_Distribution\CordLengthDistribution.py [-h] [-o] [-s] [-p] [-d]
 -h,                  : show this help
 -o,                  : setting output directory name [resultsCLD]
--s,                  : set pixel size [2.9141 nm per pixel]
 -p,                  : set page position of the mask in a TIFF [2]
 -d                   : show debug output
 ```
