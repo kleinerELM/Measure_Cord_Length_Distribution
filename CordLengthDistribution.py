@@ -45,11 +45,14 @@ def processArguments():
     global ignoreBorder
     global minLength
     global materialColor
+    global poreColor
     global globMaskPagePos
     argv = sys.argv[1:]
-    usage = sys.argv[0] + " [-h] [-o] [-p] [-d]"
+    usage = sys.argv[0] + " [-h] [-o] [-p] [-w] [-d]"
+    colorName = 'black' if ( poreColor == 0 ) else 'white'
+    altColor = 'black' if ( poreColor == 0 ) else 'white'
     try:
-        opts, args = getopt.getopt(argv,"hp:o:d",[])
+        opts, args = getopt.getopt(argv,"hw:p:o:d",[])
     except getopt.GetoptError:
         print( usage )
     for opt, arg in opts:
@@ -57,16 +60,17 @@ def processArguments():
             print( 'usage: ' + usage )
             print( '-h,                  : show this help' )
             print( '-o,                  : setting output directory name [' + outputDirName + ']' )
-            #print( '-s,                  : set pixel size [' + str( pixelWidth ) + ' nm per pixel]' )
-            print( '-p,                  : set page position of the mask in a TIFF [' + str( maskPagePos + 1 ) + ']' )
+            print( '-w,                  : change expected pore color from ' + colorName + ' to ' + altColor )
+            print( '-p,                  : set page position of the mask in a TIFF [' + str( globMaskPagePos + 1 ) + ']' )
             print( '-d                   : show debug output' )
             print( '' )
             sys.exit()
         elif opt in ("-o"):
             outputDirName = arg
             print( 'changed output directory to ' + outputDirName )
-        #elif opt in ("-s"):
-        #    pixelWidth = float( arg )
+        elif opt in ("-c"):
+            poreColor = 255
+            materialColor = 0
         elif opt in ("-p"):
             globMaskPagePos = int( arg ) -1
             if ( globMaskPagePos < 0 ): 
@@ -80,8 +84,7 @@ def processArguments():
     if ( ignoreBorder ) : print( ' - areas touching a border will be ignored' )
     else : print( ' - areas touching a border will be included (may be flawed!)' )
     print( ' - ignoring areas smaller than ' + str( minLength ) + ' pixel')
-    if ( materialColor == 0 ) : colorName = 'white'
-    else: colorName = 'black'
+    colorName = 'black' if ( poreColor == 0 ) else 'white'
     print( ' - calculating the Cord Length Distribution of ' + colorName + ' areas')
     if ( globMaskPagePos == 0 ) : print( ' - expecting a normal b/w TIFF or a multi page TIFF, where the mask is on page 1' )
     else : print( ' - expecting a multi page Tiff where the mask is on page ' + str( globMaskPagePos + 1 ) )
