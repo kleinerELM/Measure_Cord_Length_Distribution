@@ -1,13 +1,14 @@
-import csv
-import os, sys, getopt
-import subprocess
-import math
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import os, sys, getopt, subprocess, csv, time, math, mmap
 import tkinter as tk
-import mmap
 from PIL import Image, ImageSequence
 from tkinter import filedialog
 from subprocess import check_output
-import time
+import porespy as ps
+import matplotlib.pyplot as plt
+import imageio
 
 #remove root windows
 root = tk.Tk()
@@ -17,7 +18,7 @@ print("#########################################################")
 print("# A Script to process the Cord Length Distribution of a #")
 print("# masked image                                          #")
 print("#                                                       #")
-print("# © 2019 Florian Kleiner                                #")
+print("# © 2020 Florian Kleiner                                #")
 print("#   Bauhaus-Universität Weimar                          #")
 print("#   F. A. Finger-Institut für Baustoffkunde             #")
 print("#                                                       #")
@@ -50,9 +51,11 @@ def processArguments():
     argv = sys.argv[1:]
     usage = sys.argv[0] + " [-h] [-o] [-p] [-w] [-d]"
     colorName = 'black' if ( poreColor == 0 ) else 'white'
-    altColor = 'black' if ( poreColor == 0 ) else 'white'
+    altColor = 'black' if ( materialColor == 0 ) else 'white'
+    outputDirNameOld = outputDirName
+    doExit = False
     try:
-        opts, args = getopt.getopt(argv,"hw:p:o:d",[])
+        opts, args = getopt.getopt(argv,"hwp:o:d",[])
     except getopt.GetoptError:
         print( usage )
     for opt, arg in opts:
@@ -64,11 +67,10 @@ def processArguments():
             print( '-p,                  : set page position of the mask in a TIFF [' + str( globMaskPagePos + 1 ) + ']' )
             print( '-d                   : show debug output' )
             print( '' )
-            sys.exit()
+            doExit = True
         elif opt in ("-o"):
             outputDirName = arg
-            print( 'changed output directory to ' + outputDirName )
-        elif opt in ("-c"):
+        elif opt in ("-w"):
             poreColor = 255
             materialColor = 0
         elif opt in ("-p"):
@@ -80,6 +82,7 @@ def processArguments():
             showDebuggingOutput = True
     # print information for the main settings:
     print( 'Settings:')
+    if ( outputDirNameOld != outputDirName ): print( ' - changed output directory to "' + outputDirName + '"' )
     #print( ' - pixel size is set to ' + str( pixelWidth ) + ' nm per pixel')
     if ( ignoreBorder ) : print( ' - areas touching a border will be ignored' )
     else : print( ' - areas touching a border will be included (may be flawed!)' )
@@ -89,6 +92,7 @@ def processArguments():
     if ( globMaskPagePos == 0 ) : print( ' - expecting a normal b/w TIFF or a multi page TIFF, where the mask is on page 1' )
     else : print( ' - expecting a multi page Tiff where the mask is on page ' + str( globMaskPagePos + 1 ) )
     print( '' )
+    if doExit: sys.exit()
 
 def processDirectionalCLD( im, scaling, directory, direction ):
     global outputDirName
@@ -134,7 +138,7 @@ def processDirectionalCLD( im, scaling, directory, direction ):
                 lastValue = value
     elif ( direction == 'vertical' ):
         for x in range(width):
-            if ( x % 100 == 0  ): print('  ... line ' + str( x ) + ' of ' + str( height ), end="\r")
+            if ( x % 100 == 0  ): print('  ... line ' + str( x ) + ' of ' + str( width ), end="\r")
             for y in range(height):
                 value = im.getpixel((x,y))
                 borderReached = (y == height-1)
@@ -185,7 +189,7 @@ def processCLD( directory, filename ):
     scaling = getImageJScaling( filename, directory )
     pageCnt = 0
     
-    im = Image.open( directory + "/" + filename ) 
+    im = Image.open( directory + "/" + filename )
     # check page count in image
     for i in enumerate(ImageSequence.Iterator(im)):
         pageCnt +=1
@@ -200,6 +204,22 @@ def processCLD( directory, filename ):
         if ( i == maskPagePos ): 
             sumResultCSV += processDirectionalCLD(im, scaling, directory, 'horizontal')
             sumResultCSV += processDirectionalCLD(im, scaling, directory, 'vertical')
+            
+            img = imageio.imread( directory + "/" + filename )
+            chords_x = ps.filters.apply_chords(img, axis=0, spacing=1, trim_edges=True)
+            chords_y = ps.filters.apply_chords(img, axis=1, spacing=1, trim_edges=True)
+            #chords_z = ps.filters.apply_chords(img, axis=2, spacing=1, trim_edges=True)
+            
+            cld_x = ps.metrics.chord_length_distribution( chords_x, bins=100, log=True )
+            cld_y = ps.metrics.chord_length_distribution( chords_y, bins=100, log=True )
+            #cld_z = ps.metrics.chord_length_distribution( chords_z, bins=100, log=True )
+
+            fig, (ax0, ax1) = plt.subplots( ncols=2, nrows=1, figsize=(20,10) )
+            ax0.bar(cld_x.bin_centers,cld_x.relfreq,width=cld_x.bin_widths,edgecolor='k')
+            ax1.bar(cld_y.bin_centers,cld_y.relfreq,width=cld_y.bin_widths,edgecolor='k')
+            #ax2.bar(cld_z.bin_centers,cld_z.relfreq,width=cld_z.bin_widths,edgecolor='k')
+            
+            plt.savefig(directory + "/" + filename + 'line_plot.svg')  
     im.close()
     print()
 

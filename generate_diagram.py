@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 #########################################################
 # Automated diagram generation from CSV-files
 #
@@ -9,15 +12,8 @@
 #
 #########################################################
 
-
-import csv
-import os, sys, getopt
-import subprocess
-import math
+import os, sys, getopt, subprocess, csv, time, math, mmap, statistics, re
 import tkinter as tk
-import mmap
-import re #regular expressions
-import statistics
 from PIL import Image
 from tkinter import filedialog
 from subprocess import check_output
@@ -41,20 +37,6 @@ root = tk.Tk()
 root.withdraw()
 runGnuPlot_Script = True
 showDebuggingOutput = False
-#poreSizeRangeArray = [ 
-#    0, 1, 2, 4, 8, 16, 31.5, 63, 125, 250, 500, 
-#    1000, 2000, 4000, 8000, 16000, 31500, 63000, 125000, 250000, 500000, 1000000, 
-#    2000000, 4000000, 8000000, 16000000, 31500000, 63000000, 125000000, 250000000, 500000000, 1000000000,
-#    2000000000, 4000000000, 8000000000, 16000000000, 31500000000, 63000000000, 125000000000, 250000000000, 500000000000, 1000000000000,
-#    2000000000000, 4000000000000, 8000000000000, 16000000000000, 31500000000000, 63000000000000, 125000000000000, 250000000000000, 500000000000000, 1000000000000000,
-#    2000000000000000, 4000000000000000, 8000000000000000, 16000000000000000, 31500000000000000, 63000000000000000, 125000000000000000, 250000000000000000, 500000000000000000, 1000000000000000000  ]
-#poreSizeRangeArray = [i for i in range(9,1800,9)]
-#poreSizeRangeArray = [i for i in range(9,(300*9),18)]
-#for i in range(100):
-#    poreSizeRangeArray[i] = 0
-#for i in range(100, 1000, 2):
-#    poreSizeRangeArray[i] = 0
-# prepare result arrays
 poreCountSumArray = []
 resultCSVTable = []
 summaryResultCSVTable = []
@@ -179,7 +161,8 @@ def processArguments():
     print( 'Use -h to show help.' )
     print( '' )
     print( 'Start parameters:' )
-    if ( runGnuPlot_Script ): print( '  GnuPlot processing deactivated' )
+    if ( runGnuPlot_Script ): print( '  GnuPlot processing activated' )
+    else:  print( '  GnuPlot processing deactivated' )
     print( '  X-Unit is set to ' + xUnit )
     calcPoreDiaUnits = [ xUnit, xUnit+'²', xUnit+'³', xUnit+'²']
     if ( yUnit == 0 ): print( '  Y-Unit is set to area-%' )
@@ -237,7 +220,7 @@ def getLimit():
     return limit
 
 def getPoreRadius( area ):
-    return ( math.sqrt( area /math.pi ) )
+    return ( math.sqrt( area / math.pi ) )
 
 def getPoreDiameter( area ):
     return ( getPoreRadius( area )*2 )
@@ -389,17 +372,21 @@ def processCSV( directory, filename ):
         csv_result_file = open(directory + result_file, 'w')
         resultline = ("size, " +              # 1: actual pore size bin
                       "count, " +             # 2: pore count in the actual bin
-                      "size percent, " +      # 3: % pore size/full pore size
-                      "size percent sum, " +  # 4: % summed pore size/full pore size
+                      "size %, " +            # 3: % pore size/full pore size
+                      "size % sum, " +        # 4: % summed pore size/full pore size
                       "sum diameter, " +      # 5: summed pore diameter for the actual bin
                       "sum area, " +          # 6: summed pore area for the actual bin
                       "sum volume, " +        # 7: summed pore volume for the actual bin
                       "sum surface, " +       # 8: summed pore surface for the actual bin
-                      "circularity, " +        # 9: mean circularity
-                      "stdev of pore diameter, " + # : stdev of pore diameter
-                      "stdev of pore area, " +     # : stdev of pore area
-                      "stdev of pore volume, " +   # : stdev of pore volume
-                      "stdev of pore surface\n")   # : stdev of pore surface
+                      "circularity, " +       # 9: mean circularity
+                      "stdev of pore diameter, " + # 10: stdev of pore diameter
+                      "stdev of pore area, " +     # 11: stdev of pore area
+                      "stdev of pore volume, " +   # 12: stdev of pore volume
+                      "stdev of pore surface, " +  # 13: stdev of pore surface
+                      "diameter %, " +             # 14: % (sum/#5)
+                      "area %, " +                 # 15: % (sum/#6)
+                      "volume %, " +               # 16: % (sum/#7)
+                      "surface %\n")               # 17: % (sum/#8)
         csv_result_file.write( resultline )
         csv_result_file.close()
         elementCount = 0
@@ -524,17 +511,21 @@ def processCSV( directory, filename ):
         medianLtd.append( tmp_array[ medianLtdPos ] )
 
         print( "  Processed elements: " + str( elementCount ) )
+        print( "  Processed area: " + str( round(  poreDiameterSum*pixelSize, roundPrecision ) ) + " " + xUnit + "²")
+        
+
         print()
         print( "  results without upper limit:" )
         for i in range(len(calcPoreDiaNames)):
-            print( "   Mean " + calcPoreDiaNames[i] + ": " + str( round(  mean[i], roundPrecision) ) + " " + xUnit )
+            print( "   Mean " + calcPoreDiaNames[i] + ": " + str( round(  mean[i], roundPrecision) ) + " " + calcPoreDiaUnits[i] )
         print()
         for i in range(len(calcPoreDiaNames)):
-            print( "   Median " + calcPoreDiaNames[i] + ": " + str( round(  median[i], roundPrecision) ) + " " + xUnit )
+            print( "   Median " + calcPoreDiaNames[i] + ": " + str( round(  median[i], roundPrecision) ) + " " + calcPoreDiaUnits[i] )
 
         print()
         print()
         print( "  Processed elements below a diameter of " + str( limit )  + " " + xUnit + ": " + str( elementCountLimited ) )
+        print( "  Processed area: below a diameter of " + str( limit )  + " " + xUnit + ": " + str( round(  poreDiameterSumLimited*pixelSize, roundPrecision  ) ) + " " + xUnit + "²")
         print( "  results with upper limit: " + str( round( limit, roundPrecision ) ) + " " + unit )
         for i in range(len(calcPoreDiaNames)):
             print( "   Mean " + calcPoreDiaNames[i] + ": " + str( round(  meanLtd[i], roundPrecision) ) + " " + calcPoreDiaUnits[i] )
@@ -600,7 +591,7 @@ def processCSV( directory, filename ):
                     stdevVolume = statistics.stdev(poreVolumeListByBin[i])
                     stdevSurface = statistics.stdev(poreSurfaceListByBin[i])
                 # create columns
-                resultline = (str( round( poreSizeRangeArray[i]/rangeFactor, 6 ) ) + ',' + # 1: actual pore size bin
+                resultline = (str( round( poreSizeRangeArray[i]/rangeFactor, 6 ) ) + ',' +              # 1: actual pore size bin
                               str( poreCountArray[i] ) + ',' +                                          # 2: pore count in the actual bin
                               str( round( ( 100/poreAreaSum*poreAreaArray[i] ), 2 ) ) + ',' +           # 3: % pore area /full pore area
                               str( round( ( poreFullSum ), 2 ) ) + ',' +                                # 4: % summed pore area/full pore area
@@ -612,7 +603,12 @@ def processCSV( directory, filename ):
                               str( round( stdevDiameter, roundPrecision ) ) + ',' +                     # 10: stdev of pore diameter for the actual bin
                               str( round( stdevArea, roundPrecision ) ) + ',' +                         # 11: stdev of pore area for the actual bin
                               str( round( stdevVolume, roundPrecision ) ) + ',' +                       # 12: stdev of pore volume for the actual bin
-                              str( round( stdevSurface, roundPrecision ) ) + "\n" )                     # 13: stdev of pore surface for the actual bin
+                              str( round( stdevSurface, roundPrecision ) ) + ',' +                      # 13: stdev of pore surface for the actual bin
+                              str( round( poreDiameterArray[i]/poreDiameterSum, roundPrecision*2 ) ) + ',' +      # 14: proportion of pore diameter of the actual bin
+                              str( round( poreAreaArray[i]/poreAreaSum, roundPrecision*2 ) ) + ',' +              # 15: proportion of pore area of the actual bin
+                              str( round( poreVolumeArray[i]/poreVolumeSum, roundPrecision*2 ) ) + ',' +          # 16: proportion of pore volume of the actual bin
+                              str( round( poreSurfaceArray[i]/poreSurfaceSum, roundPrecision*2 ) ) + "\n" )       # 17: proportion of pore surface of the actual bin
+
                 if ( ignoreLastLine and ( i == (len(poreSizeRangeArray)-1) ) ): 
                     poreCountArray[i] = 0
                     if ( showDebuggingOutput ) : print( "  ignoring last line" )
@@ -662,21 +658,35 @@ def createGnuplotPlot( directory, filename, plot, openPDF = False ):
     global calcPoreDia
     global calcPoreDiaNames
     global calcPoreDiaUnits
+    global poreDiameterLimit
 
+    
+    if poreDiameterLimit < maxVal : maxVal = poreDiameterLimit
+    
     print( "  Creating gnuplot plot for " + filename )
     #result_file = '/result_' + filename
     #if os.path.exists( directory + result_file ) :    
     gp_file = open( directory + '/' + filename.rsplit('.', 1)[0] + '.gp', 'w')
     #gp_file.write( 'set logscale x' + "\n" )
     gp_file.write( "set style fill solid\n" )
-    
     gp_file.write( 'set datafile separator ","' + "\n" )
-    gp_file.write( "set xrange [" + str( minVal ) + ":" + str( maxVal ) + "]\n" ) # modify for unit change
+
+    gp_file.write( "set xrange [" + str( 0 ) + ":" + str( maxVal ) + "]\n" ) # modify for unit change
     gp_file.write( "set key left top\n")
     gp_file.write( 'set terminal pdf size 17cm,10cm' + "\n" )
     #gp_file.write( "set terminal wxt size 1000,500 enhanced font 'Arial,12' persist\n" )
     gp_file.write( 'set output "' + directory + '/' + filename.rsplit('.', 1)[0] + '.pdf"' + "\n" )
     gp_file.write( 'cd "' + directory + '"' + "\n" )
+
+    # margins
+    gp_file.write( "set lmargin 10.60" + "\n" )
+    gp_file.write( "set rmargin 1.45" + "\n" )
+    gp_file.write( "set tmargin 0.75" + "\n" )
+    gp_file.write( "set bmargin 3.75" + "\n" )
+
+    # grid
+    gp_file.write( "set grid xtics ls 21 lc rgb '#cccccc' dt 5" + "\n" )
+    gp_file.write( "set grid ytics ls 21 lc rgb '#cccccc' dt 3" + "\n" )
 
     unit = getUnit()
 
@@ -691,8 +701,10 @@ def createGnuplotPlot( directory, filename, plot, openPDF = False ):
     gp_file.write( 'set xlabel "' + xLabel + '"' + "\n" )
     gp_file.write( 'set ylabel "' + yLabel + '"' + "\n" )
 
-    poreSizeRangeStr = ','.join(str(  round( e/rangeFactor, 6 ) ) for e in poreSizeRangeArray)
-    gp_file.write( 'set xtics (' + poreSizeRangeStr + ') rotate by 45 right' + "\n" )
+    #poreSizeRangeStr = ','.join(str(  round( e/rangeFactor, 6 ) ) for e in poreSizeRangeArray)
+    #gp_file.write( 'set xtics (' + poreSizeRangeStr + ') rotate by 45 right' + "\n" )
+    poreSizeRangeStr = '0,' + str( round( maxVal/5, 0 ) ) + ',' + str( maxVal )
+    gp_file.write( 'set xtics ' + poreSizeRangeStr + ' rotate by 45 right' + "\n" )
         
     gp_file.write( "plot " + plot + "\n" )
     gp_file.close()
@@ -779,11 +791,19 @@ if ( singeFile < 0 ):
         print( "no Files found!" )
 else:
     file = filedialog.askopenfilename(title="Select file", filetypes=[("csv files", "*.csv")])
+    print( "Directory: " + os.path.basename( file ) )
     if ( os.path.exists(file) ) :
         filename = os.path.split(file)[1]
         workingDirectory = os.path.split(file)[0]
         print( " Analysing \"" + filename + "\":" )
         processCSV( workingDirectory, filename )
+
+        gnuplotLineBefehl = "'./result_" + filename + "' using 1:14 title 'diameter' with lines," 
+        gnuplotLineBefehl = gnuplotLineBefehl + "'./result_" + filename + "' using 1:15 title 'area' with lines," 
+        gnuplotLineBefehl = gnuplotLineBefehl + "'./result_" + filename + "' using 1:16 title 'volume' with lines"
+
+        openPDF = True
+        if ( runGnuPlot_Script ): createGnuplotPlot( workingDirectory, filename, gnuplotLineBefehl, openPDF )
     else:
         print("file does not exist")
 print( '' )
