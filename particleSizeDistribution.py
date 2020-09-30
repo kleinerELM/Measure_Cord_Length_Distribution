@@ -42,9 +42,9 @@ def processArguments():
         if opt == '-h':
             print( 'usage: ' + usage )
             print( '-h,                  : show this help' )
-            print( '-o,                  : setting output directory name [' + outputDirName + ']' )
-            print( '-s,                  : set pixel size [' + str( pixelWidth ) + ' nm per pixel]' )
-            print( '-p,                  : set page position of the mask in a TIFF [' + str( maskPagePos + 1 ) + ']' )
+            print( '-o,                  : setting output directory name [{}]'.format(outputDirName) )
+            print( '-s,                  : set pixel size [{} nm per pixel]'.format(pixelWidth) )
+            print( '-p,                  : set page position of the mask in a TIFF [{}]'.format(maskPagePos + 1) )
             print( '-d                   : show debug output' )
             print( '' )
             sys.exit()
@@ -85,25 +85,25 @@ def getPoreSurface( area ):
     return (4*math.pi*(radius**2))
 
 def writeCSV( workingDirectory, outputDirName, filename, sumResultCSV, CSVdelimiter, showDebuggingOutput ):
-    csvFileName = "./" + outputDirName + "/sumPSD" + filename + ".csv"
+    csvFileName = "." + os.sep + outputDirName + os.sep + "sumPSD" + filename + ".csv"
     if ( showDebuggingOutput ): print( " saving " + csvFileName )
     if ( sumResultCSV != '' ):
         headerLine = "poreNr" + CSVdelimiter + "area [nm^2]" + CSVdelimiter + "diameter [nm]" + CSVdelimiter + "volume [nm^3]" + CSVdelimiter + "surface [nm^2]\n"
-        resultFile = open(workingDirectory + "/" + csvFileName,"w") 
+        resultFile = open(workingDirectory + os.sep + csvFileName,"w") 
         resultFile.write( headerLine + sumResultCSV ) 
         resultFile.close() #to change file access modes 
 
 def processPSD( workingDirectory, filename, position, maskPagePos, outputDirName, CSVdelimiter, showDebuggingOutput ):
     sumResultCSV = ''
-    processID = " #" + str(position) + ": "
+    processID = " #{}: ".format(position)
 
-    frame = cv2.imread( workingDirectory + "/" + filename )
+    frame = cv2.imread( workingDirectory + os.sep + filename )
 
     if frame is None:
-        print( processID + 'Error loading ' + filename)
+        print( '{}Error loading {}'.format(processID, filename))
         exit()
     else:
-        print( processID + "Analysing " + filename )
+        print( '{}Analysing {}'.format(processID, filename) )
 
     #binarizes an image
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -130,13 +130,13 @@ def processPSD( workingDirectory, filename, position, maskPagePos, outputDirName
             volumes.append( getPoreVolume( areas[i] ) )
             surfaces.append( getPoreSurface( areas[i] ) )
             if ( showDebuggingOutput ) : 
-                print( processID + 'Area ' + str( pos+1 ) + ':'  + str( areas[i] ) )
+                print( '{}Area {}:{}'.format(processID, pos+1, areas[i]) )
             else: 
-                if ( pos % progressFactor == 0 ): print( processID + "...processing particle #" + str( pos ) + "/" + str( contourCount ))#, end="\r")
+                if ( pos % progressFactor == 0 ): print( "{}...processing particle #{}/{}".format(processID, pos, contourCount ))#, end="\r")
             sumResultCSV += str( pos+1 ) + CSVdelimiter + str( cleanedAreas[pos] ) + CSVdelimiter + str( diameters[pos] ) + CSVdelimiter + str( volumes[pos] ) + CSVdelimiter + str( surfaces[pos] ) + "\n"
             pos += 1
-    print( processID + 'Analysed particles: ' + str( pos ) + ', ignored 0-values: ' + str( contourCount-pos ) )
-    result = [cleanedAreas, diameters, volumes, surfaces]
+    print( '{}Analysed particles: {}, ignored 0-values: {}'.format(processID, pos, contourCount-pos) )
+    
     writeCSV( workingDirectory, outputDirName, filename, sumResultCSV, CSVdelimiter, showDebuggingOutput )
     
     return [diameters, cleanedAreas, volumes, surfaces]
@@ -176,34 +176,30 @@ if __name__ == '__main__':
     processArguments()
     workingDirectory = filedialog.askdirectory(title='Please select the image / working directory')
     if ( showDebuggingOutput ) : 
-        print( 'Found ' + str( coreCount ) + ' CPU cores. Using max. ' + str( processCount ) + ' processes at once.' )
-        print( "I am living in '" + home_dir + "'" )
-        print( "Selected working directory: " + workingDirectory, end='\n\n' )
-    
+        print( 'Found {} CPU cores. Using max. {} processes at once.'.format(coreCount, processCount) )
+        print( "I am living in '{}'".format(home_dir) )
+        print( "Selected working directory: {}".format( workingDirectory ), end='\n\n' )
 
     count = 0
-    position = 0
     fileList = []
     ## count files
     if os.path.isdir( workingDirectory ) :
         for file in os.listdir(workingDirectory):
             if ( file.endswith(".tif") or file.endswith(".TIF")):
-                #if ( threadPos > coreCount ) : 
-                #    threadPos = 0
                 fileList.append( file )
-                #threadPos = threadPos + 1
-                count = count + 1
+                count +=  1
 
-    print( str(count) + " Tiffs found!" )
+    print( "{} Tiffs found!".format(count) )
     ## run actual code
     if ( count > 0 ):
-        if not os.path.exists( workingDirectory + "/" + outputDirName ):
-            os.makedirs( workingDirectory + "/" + outputDirName )
+        if not os.path.exists( workingDirectory + os.sep + outputDirName ):
+            os.makedirs( workingDirectory + os.sep + outputDirName )
         pool = multiprocessing.Pool(processCount)
+        pos = 0
         for file in fileList:
             filename = os.fsdecode(file)
-            position += 1
-            pool.apply_async(processPSD, args=( workingDirectory, filename, position, maskPagePos, outputDirName, CSVdelimiter, showDebuggingOutput ), callback = log_result)
+            pos += 1
+            pool.apply_async(processPSD, args=( workingDirectory, filename, pos, maskPagePos, outputDirName, CSVdelimiter, showDebuggingOutput ), callback = log_result)
 
         pool.close()
         pool.join()
@@ -222,5 +218,5 @@ if __name__ == '__main__':
         writeCSV( workingDirectory, outputDirName, '', sumResultCSV, CSVdelimiter, showDebuggingOutput )
 
     print( "Results can be found in directory:" )
-    print( "  " +  workingDirectory + "/" + outputDirName + "/\n" )
+    print( "  {}/{}/\n".format(workingDirectory, outputDirName) )
     print( "Script DONE!" )

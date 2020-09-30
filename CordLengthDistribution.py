@@ -14,19 +14,31 @@ import imageio
 root = tk.Tk()
 root.withdraw()
 
-print("#########################################################")
-print("# A Script to process the Cord Length Distribution of a #")
-print("# masked image                                          #")
-print("#                                                       #")
-print("# © 2020 Florian Kleiner                                #")
-print("#   Bauhaus-Universität Weimar                          #")
-print("#   F. A. Finger-Institut für Baustoffkunde             #")
-print("#                                                       #")
-print("#########################################################")
-print()
+def programInfo():
+    print("#########################################################")
+    print("# A Script to process the Cord Length Distribution of a #")
+    print("# masked image                                          #")
+    print("#                                                       #")
+    print("# © 2020 Florian Kleiner                                #")
+    print("#   Bauhaus-Universität Weimar                          #")
+    print("#   F. A. Finger-Institut für Baustoffkunde             #")
+    print("#                                                       #")
+    print("#########################################################")
+    print()
 
 #### directory definitions
 home_dir = os.path.dirname(os.path.realpath(__file__))
+
+ts_path = os.path.dirname( home_dir ) + os.sep + 'tiff_scaling' + os.sep
+ts_file = 'set_tiff_scaling'
+if ( os.path.isdir( ts_path ) and os.path.isfile( ts_path + ts_file + '.py' ) or os.path.isfile( home_dir + ts_file + '.py' ) ):
+    if ( os.path.isdir( ts_path ) ): sys.path.insert( 1, ts_path )
+    import extract_tiff_scaling as es
+else:
+    programInfo()
+    print( 'missing ' + ts_path + ts_file + '.py!' )
+    print( 'download from https://github.com/kleinerELM/tiff_scaling' )
+    sys.exit()
 
 outputDirName = "resultsCLD"
 showDebuggingOutput = False
@@ -112,11 +124,11 @@ def processDirectionalCLD( im, scaling, directory, direction ):
 
     minLength = 1
     resultCSV = ''
-    print( '  processing ' + str( direction ) + ' cord length distribution' )#, end='' )
+    print( '  processing {} cord length distribution'.format(direction) )#, end='' )
     startTime = int(round(time.time() * 1000))
     if ( direction == 'horizontal' ):
         for y in range(height):
-            if ( y % 100 == 0 ): print('  ... line ' + str( y ) + ' of ' + str( height ), end="\r")
+            if ( y % 100 == 0 ): print('  ... line {} of {}'.format(y, height), end="\r")
             for x in range(width):
                 value = im.getpixel((x,y))
                 borderReached = (x == width-1)
@@ -136,9 +148,10 @@ def processDirectionalCLD( im, scaling, directory, direction ):
                     else:
                         lastChangedPos = x
                 lastValue = value
+
     elif ( direction == 'vertical' ):
         for x in range(width):
-            if ( x % 100 == 0  ): print('  ... line ' + str( x ) + ' of ' + str( width ), end="\r")
+            if ( x % 100 == 0  ): print('  ... line {} of {}'.format(x, width), end="\r")
             for y in range(height):
                 value = im.getpixel((x,y))
                 borderReached = (y == height-1)
@@ -160,11 +173,11 @@ def processDirectionalCLD( im, scaling, directory, direction ):
     else:
         print( "  unknown direction '" + str( direction )+ "'" )
     if ( resultCSV != '' ):
-        print( "   " + str( lineCount ) + " lines measured in " + str( int(round(time.time() * 1000)) -startTime ) + " ms", end='' )
-        print( "   " + str( round(100 / imageArea * usedImageArea, 2) ) + ' of ' + str( round(100 / imageArea * fullPoreArea, 2) ) + " area-% were taken into account"   )
+        print( "   {} lines measured in {} ms".format(lineCount, int(round(time.time() * 1000)) - startTime), end='' )
+        print( "   {:.2f} of {:.2f} area-% were taken into account".format(100/imageArea*usedImageArea, 100/imageArea*fullPoreArea) )
         #print( str( usedImageArea ) + '  ' + str( fullPoreArea ) )
         headerLine = "lineCount" + "	" + "length [nm]" + "\n"#+ "	" + "volume fraction" + "\n"
-        resultFile = open(directory + "/" + outputDirName + "/" + filename + "." + direction + ".csv","w") 
+        resultFile = open(directory + os.sep + outputDirName + os.sep + filename + "." + direction + ".csv","w") 
         resultFile.write( headerLine + resultCSV ) 
         resultFile.close() #to change file access modes 
     return resultCSV
@@ -186,15 +199,15 @@ def processCLD( directory, filename ):
     global outputDirName
     global sumResultCSV
     
-    scaling = getImageJScaling( filename, directory )
+    scaling = es.autodetectScaling( filename, directory )
     pageCnt = 0
     
-    im = Image.open( directory + "/" + filename )
+    im = Image.open( directory + os.sep + filename )
     # check page count in image
     for i in enumerate(ImageSequence.Iterator(im)):
         pageCnt +=1
     if ( pageCnt - 1 < globMaskPagePos ) :
-        print( '  WARNING: The image has only ' + str( pageCnt ) + ' page(s)! Trying to use page 1 as mask.')
+        print( '  WARNING: The image has only {} page(s)! Trying to use page 1 as mask.'.format(pageCnt))
         maskPagePos = 0
     else:
         maskPagePos = globMaskPagePos
@@ -205,7 +218,7 @@ def processCLD( directory, filename ):
             sumResultCSV += processDirectionalCLD(im, scaling, directory, 'horizontal')
             sumResultCSV += processDirectionalCLD(im, scaling, directory, 'vertical')
             
-            img = imageio.imread( directory + "/" + filename )
+            img = imageio.imread( directory + os.sep + filename )
             chords_x = ps.filters.apply_chords(img, axis=0, spacing=1, trim_edges=True)
             chords_y = ps.filters.apply_chords(img, axis=1, spacing=1, trim_edges=True)
             #chords_z = ps.filters.apply_chords(img, axis=2, spacing=1, trim_edges=True)
@@ -219,75 +232,48 @@ def processCLD( directory, filename ):
             ax1.bar(cld_y.bin_centers,cld_y.relfreq,width=cld_y.bin_widths,edgecolor='k')
             #ax2.bar(cld_z.bin_centers,cld_z.relfreq,width=cld_z.bin_widths,edgecolor='k')
             
-            plt.savefig(directory + "/" + filename + 'line_plot.svg')  
+            plt.savefig(directory + os.sep + filename + 'line_plot.svg')  
     im.close()
     print()
 
-def getImageJScaling( filename, workingDirectory ):
-    global showDebuggingOutput
-
-    scaling = { 'x' : 1, 'y' : 1, 'unit' : 'px', 'editor':None}
-    with Image.open( workingDirectory + '/' + filename ) as img:
-        #print(filename + ':')
-        if ( 282 in img.tag ) and ( 283 in img.tag ):
-            x_tag = img.tag[282][0]
-            y_tag = img.tag[283][0]
-            scaling['x'] = int( x_tag[1] )/ int( x_tag[0] )
-            scaling['y'] = int( y_tag[1] )/ int( y_tag[0] )
-            #print( x_tag ) #x
-            #print( y_tag ) #y
-        if 270 in img.tag:            
-            # getimagej definitions
-            IJSettingString = img.tag[270][0].split('\n')
-            IJSettingsArray = {}
-            for val in IJSettingString:
-                if ( val != '' ):
-                    setting = val.split('=')
-                    IJSettingsArray[setting[0]] = setting[1]
-            #print(IJSettingsArray)
-            if ( 'ImageJ' in IJSettingsArray ):
-                if ( showDebuggingOutput ): print( '  Image edited using ImageJ ' + IJSettingsArray['ImageJ'] )
-                scaling['editor'] = 'ImageJ ' + IJSettingsArray['ImageJ']
-            if ( 'unit' in IJSettingsArray ):
-                scaling['unit'] = IJSettingsArray['unit']
-                print( '  scaling: ' + str( round( scaling['x'], 4) ) + ' x ' + str( round( scaling['y'], 4) ) + ' ' + scaling['unit'] )
-            else :
-                print( '  unitless scaling: ' + str( round( scaling['x'], 4) ) + ' x ' + str( round( scaling['y'], 4) ) )
-    return scaling
-
 ### actual program start
-processArguments()
-if ( showDebuggingOutput ) : print( "I am living in '" + home_dir + "'" )
-workingDirectory = filedialog.askdirectory(title='Please select the image / working directory')
-if ( showDebuggingOutput ) : print( "Selected working directory: " + workingDirectory )
+if __name__ == '__main__':
+    programInfo()
+    processArguments()
+    if ( showDebuggingOutput ) : print( "I am living in '" + home_dir + "'" )
+    workingDirectory = filedialog.askdirectory(title='Please select the image / working directory')
+    if ( showDebuggingOutput ) : print( "Selected working directory: " + workingDirectory )
 
-count = 0
-position = 0
-## count files
-if os.path.isdir( workingDirectory ) :
-    for file in os.listdir(workingDirectory):
-        if ( file.endswith(".tif") or file.endswith(".TIF")):
-            count = count + 1
-print( str(count) + " Tiffs found!" )
-## run actual code
-if os.path.isdir( workingDirectory ) :
-    if not os.path.exists( workingDirectory + "/" + outputDirName ):
-        os.makedirs( workingDirectory + "/" + outputDirName )
-    ## processing files
-    for file in os.listdir(workingDirectory):
-        if ( file.endswith(".tif") or file.endswith(".TIF")):
-            filename = os.fsdecode(file)
-            position = position + 1
-            print( " Analysing " + filename + " (" + str(position) + "/" + str(count) + ") :" )
-            processCLD( workingDirectory, filename )
+    ## count files
+    count = 0
+    if os.path.isdir( workingDirectory ) :
+        for file in os.listdir(workingDirectory):
+            if ( file.endswith(".tif") or file.endswith(".TIF")):
+                count += 1
+    print( "{} Tiffs found!".format(count) )
+    output_path = workingDirectory + os.sep + outputDirName
+
+    ## run actual code
+    if os.path.isdir( workingDirectory ) :
+        if not os.path.exists( output_path ):
+            os.makedirs( output_path )
+
+        ## processing files
+        position = 0
+        for file in os.listdir(workingDirectory):
+            if ( file.endswith(".tif") or file.endswith(".TIF")):
+                filename = os.fsdecode(file)
+                position += 1
+                print( " Analysing {} ({} / {}) :".format(filename, position, count) )
+                processCLD( workingDirectory, filename )
 
 
-if ( sumResultCSV != '' ):
-    headerLine = "lineCount" + "	" + "length [nm]\n"
-    resultFile = open(workingDirectory + "/" + outputDirName + "/sumCLD.csv","w") 
-    resultFile.write( headerLine + sumResultCSV ) 
-    resultFile.close() #to change file access modes 
+    if ( sumResultCSV != '' ):
+        headerLine = "lineCount" + "	" + "length [nm]\n"
+        resultFile = open(output_path + os.sep +"sumCLD.csv","w") 
+        resultFile.write( headerLine + sumResultCSV ) 
+        resultFile.close() #to change file access modes 
 
-print( "Results can be found in directory:" )
-print( "  " +  workingDirectory + "/" + outputDirName + "/\n" )
-print( "Script DONE!" )
+    print( "Results can be found in directory:" )
+    print( "  " +  output_path + "/\n" )
+    print( "Script DONE!" )
