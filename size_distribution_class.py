@@ -58,7 +58,8 @@ class size_distribution():
     tile_area = 0
 
     scaling = es.getEmptyScaling()
-    
+    pore_diameter_limit = 100 #nm
+
     materialColor = 255
     poreColor = 0
 
@@ -122,7 +123,7 @@ class size_distribution():
         if verbose: print( '{}Analysing {}'.format(processID, filename) )
 
         height, width = img.shape[:2]
-        
+
         if self.check_tile_dimension(height, width):
             new_row = {'filename':file_name, 'height':height, 'width':width }
         self.analyzed_files_DF = self.analyzed_files_DF.append(new_row, ignore_index=True)
@@ -136,7 +137,7 @@ class size_distribution():
                 diameter = self.getPoreDiameter(area)
             else:
                 area = self.getPoreArea(diameter)
-            result_row = {  
+            result_row = {
                 'file_index':   file_index,
                 'diameter':     diameter,
                 'area' :        area,
@@ -156,7 +157,7 @@ class size_distribution():
         file_index = int(len(self.analyzed_files_DF)-1)
         emptyArea = 0
         progressFactor = 500
-        
+
         startTime = int(round(time.time() * 1000))
         for i in range(0, contourCount):
             area = cv2.contourArea(contours[i])
@@ -171,7 +172,7 @@ class size_distribution():
             #self.psd_df.to_csv( self.output_folder + file_name + '_pores.csv', index=False )
             print(self.psd_df)
 
-    
+
     def process_directional_CLD( self, img, direction, processID = ' ', verbose=False):
         #global materialColor
         #global ignoreBorder
@@ -244,15 +245,15 @@ class size_distribution():
                     lastValue = value
         else:
             print( "  unknown direction '{}'".format(direction) )
-        
+
         if verbose:
             print( "   {} lines measured in {} ms".format(lineCount, int(round(time.time() * 1000)) - startTime), end='' )
             print( "   {:.2f} of {:.2f} area-% were taken into account".format(100/self.tile_area*usedImageArea, 100/self.tile_area*fullPoreArea) )
         #    #print( str( usedImageArea ) + '  ' + str( fullPoreArea ) )
         #    headerLine = "lineCount" + "	" + "length [nm]" + "\n"#+ "	" + "volume fraction" + "\n"
-        #    resultFile = open(self.output_folder + filename + "." + direction + ".csv","w") 
-        #    resultFile.write( headerLine + resultCSV ) 
-        #    resultFile.close() #to change file access modes 
+        #    resultFile = open(self.output_folder + filename + "." + direction + ".csv","w")
+        #    resultFile.write( headerLine + resultCSV )
+        #    resultFile.close() #to change file access modes
         #return resultCSV
 
     def processCLD( self, img, processID=' ', process_position=None, verbose=False ):
@@ -274,7 +275,56 @@ class size_distribution():
         #ax0.bar(cld_x.bin_centers,cld_x.relfreq,width=cld_x.bin_widths,edgecolor='k')
         #ax1.bar(cld_y.bin_centers,cld_y.relfreq,width=cld_y.bin_widths,edgecolor='k')
 
-    def __init__(self, folder, file_name, file_extension, verbose=False ):
+    def get_histogram_bins(self, max_value, step, as_pixel=False):
+        bin_count = round( max_value/self.scaling['x']+2 )
+
+        if as_pixel:
+            bins = [i for i in range(0,bin_count,step)]
+        else:
+            bins = [round(i*self.scaling['x'],4) for i in range(0,bin_count,step)]
+
+        return bins
+
+    def get_histogram_list(self, series, max_value=100, step=1, power=1):
+        scale = self.scaling['x']
+        #if power > 1:
+            #bins = numpy.power(bins, power)
+        bins = self.get_histogram_bins(max_value, step, as_pixel=True)
+
+        histogram = numpy.histogram(list(series), bins=bins)
+
+        return histogram[0], numpy.round( numpy.array(bins, dtype=numpy.float32)*scale,4)
+
+    def clean_histogram(self, histogram, bins, power=1):
+        if power > 1:
+            pow_bins = bins
+            maxval = numpy.amax(bins)
+            cleaned_hist = []
+            pos = 0
+            deleted = 0
+            for value in histogram:
+                if value == 0:
+                    pow_bins = numpy.delete(pow_bins, pos-deleted)
+                    deleted += 1
+                else:
+                    cleaned_hist.append(value)
+
+                pos += 1
+        print(len(pow_bins), len(cleaned_hist))
+        print((pow_bins), (cleaned_hist))
+        return histogram, bin
+
+
+    def get_sum_list(self, value_list):
+        sums = [0]
+        for i in value_list:
+            sums.append(i+sums[-1])
+        return sums
+
+    def get_values_above(self, series, value):
+        return numpy.where( list(series) > value )
+
+    def __init__(self, folder, file_name, file_extension, verbose=False):
         self.folder = folder
         self.output_folder = self.folder + os.sep + 'CSV' + os.sep
         self.target_folder = os.path.abspath(os.path.join(self.folder, os.pardir))
@@ -283,9 +333,9 @@ class size_distribution():
         self.psd_df = pd.DataFrame(columns = dataframe_columns)
         self.cld_df = pd.DataFrame(columns = dataframe_columns)
 
-        
+
         img = self.get_file(file_name, file_extension, verbose=verbose)
-        
+
         print('-'*50)
         self.processPSD(img, verbose=verbose)
         print('-'*50)
@@ -303,11 +353,11 @@ class size_distribution():
 
         #self.reprocess_mean_and_stdev(verbose=verbose)
 
-    
+
 ### actual program start
 if __name__ == '__main__':
     programInfo()
 
     psd = singeFileProcess( verbose=True)
-    
+
     print( "Script DONE!" )
