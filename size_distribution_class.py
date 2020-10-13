@@ -141,6 +141,17 @@ class size_distribution():
             new_row = {'filename':file_name, 'height':height, 'width':width }
         self.analyzed_files_DF = self.analyzed_files_DF.append(new_row, ignore_index=True)
 
+    def get_column_unit(self, column):
+        power = 1
+        unit = self.scaling['unit']
+        if column == 'area' or column == 'surface':
+            unit += '²'
+            power = 2
+        elif column == 'volume':
+            unit += '³'
+            power = 3
+        return unit, power
+
     def process_result_row( self, file_index, diameter=0, area=0 ):
         result_row = False
         if area > 0 or diameter > 0:
@@ -308,10 +319,10 @@ class size_distribution():
         return cleaned_hist, [bins[0]]+pow_bins
 
     def get_basic_values(self, column, df):
-        col_max = df[column].max
-        col_mean = df[column].mean
-        col_median = df[column].median
-        return col_max, col_mean, col_median
+        max_vals = df.max(axis=0)
+        mean_vals = df.mean(axis=0)
+        median_vals = df.median(axis=0)
+        return max_vals[column], mean_vals[column], median_vals[column]
 
     def get_sum_list(self, value_list):
         sums = [0]
@@ -322,37 +333,48 @@ class size_distribution():
     def get_values_above(self, series, value):
         return numpy.where( list(series) > value )
 
-    def __init__(self, folder, file_name, file_extension, analyze_color_name='black', verbose=False):
+    def __init__(self, folder, file_name, file_extension, analyze_color_name='black', force_reprocessing=False, verbose=False):
         self.set_color_to_be_analyzed( analyze_color_name )
 
         self.folder = folder
         self.output_folder = self.folder + os.sep + 'CSV' + os.sep
+        if not os.path.isdir( self.output_folder ): os.mkdir(self.output_folder)
         self.target_folder = os.path.abspath(os.path.join(self.folder, os.pardir))
 
         self.analyzed_files_DF = pd.DataFrame(columns = ['filename' , 'height', 'width'])
         dataframe_columns = ['file_index', 'diameter', 'area', 'surface', 'volume']
-        self.psd_df = pd.DataFrame(columns = dataframe_columns)
-        self.cld_df = pd.DataFrame(columns = dataframe_columns)
 
+        psd_csv_path = self.output_folder + file_name + '_psd.csv'
+        cld_csv_path = self.output_folder + file_name + '_cld.csv'
+
+        print('-'*50)
         self.get_file(file_name, file_extension, verbose=verbose)
 
-        print('-'*50)
-        self.processPSD(self.thresh_img, verbose=verbose)
-        print('-'*50)
-        self.get_porespy_CLD(self.thresh_img)
-        print('-'*50)
-        self.process_directional_CLD(self.thresh_img, 'horizontal', verbose=verbose)
-        print('-'*50)
-        self.process_directional_CLD(self.thresh_img, 'vertical', verbose=verbose)
-        #self.processCLD(img, verbose=verbose)
-        print('-'*50)
+        # pore size distribution
+        if not os.path.isfile( psd_csv_path ) or force_reprocessing:
+            self.psd_df = pd.DataFrame(columns = dataframe_columns)
+            self.processPSD(self.thresh_img, verbose=verbose)
+            self.psd_df.to_csv(psd_csv_path)
+            print('-'*50)
+        else:
+            self.psd_df = pd.read_csv( psd_csv_path )
+            print('loaded psd csv')
 
-        # make sure the image_shuffle_count does not exceed the image count!
-        #if self.image_shuffle_count > self.image_count:
-        #    self.image_shuffle_count = self.image_count
+        # chord length distribution
+        if not os.path.isfile( cld_csv_path ) or force_reprocessing:
+            self.cld_df = pd.DataFrame(columns = dataframe_columns)
+            self.process_directional_CLD(self.thresh_img, 'horizontal', verbose=verbose)
+            print('-'*50)
+            self.process_directional_CLD(self.thresh_img, 'vertical', verbose=verbose)
+            print('-'*50)
+            self.cld_df.to_csv(cld_csv_path)
+        else:
+            self.cld_df = pd.read_csv( cld_csv_path )
+            print('loaded cld csv')
 
-        #self.reprocess_mean_and_stdev(verbose=verbose)
 
+        #self.get_porespy_CLD(self.thresh_img)
+        #print('-'*50)
 
 ### actual program start
 if __name__ == '__main__':
