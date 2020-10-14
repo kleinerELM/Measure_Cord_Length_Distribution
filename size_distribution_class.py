@@ -113,7 +113,7 @@ class size_distribution():
                 exit()
         return False
 
-    def load_binary_image(self):
+    def load_binary_image_from_grayscale(self):
         self.scaling = es.autodetectScaling( self.filename, self.folder )
         self.img = cv2.imread( self.folder + os.sep + self.filename, cv2.IMREAD_GRAYSCALE )
 
@@ -127,11 +127,30 @@ class size_distribution():
         max_val = int( (self.white+1)/2 ) #int( (self.analyze_Color+1)/2 ) if self.analyze_Color > self.ignore_Color else self.ignore_Color
         _, self.thresh_img = cv2.threshold(self.img, min_val, max_val, cv2.THRESH_BINARY)
 
+    def load_binary_image_from_color(self, color=(25,25,25)):
+        self.scaling = es.autodetectScaling( self.filename, self.folder )
+        self.img = cv2.imread( self.folder + os.sep + self.filename, cv2.COLOR_BGR2HSV )
+
+        if self.img is None:
+            print( 'Error loading {}'.format(self.filename))
+            exit()
+
+        #binarizes an image
+        min_val = color
+        max_val = color
+        _, self.thresh_img = cv2.inRange(self.img, min_val, max_val)
+
+
+        #cv2.calcHist( &hsv, 1, channels, Mat(), // do not use mask
+        #     hist, 2, histSize, ranges,
+        #     true, // the histogram is uniform
+        #     false );
+
     def get_file(self, file_name, file_extension, process_position=None, verbose=False ):
         processID = ' '
         if process_position != None: processID = " #{}: ".format(process_position)
         self.filename = file_name + file_extension
-        self.load_binary_image()
+        self.load_binary_image_from_grayscale()
 
         if verbose: print( '{}Analysing {}'.format(processID, self.filename) )
 
