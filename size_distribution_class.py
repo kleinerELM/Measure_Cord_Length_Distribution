@@ -11,6 +11,7 @@ import time
 import pandas as pd
 import porespy
 
+from matplotlib import pyplot as plt
 import cv2
 import numpy
 
@@ -42,14 +43,14 @@ else:
     print( 'download from https://github.com/kleinerELM/tiff_scaling' )
     sys.exit()
 
-def singeFileProcess(analyze_color_name='black', verbose=False):
 
+def singeFileProcess(analyze_color_name='white',analyze_color_BGR=[0,0,255], min_cld_length=1, color_id=0, force_reprocessing=False, verbose=False):
     print( "Please select the directory with the source image tiles.")#, end="\r" )
     filepath = filedialog.askopenfilename( title='Please select the reference image', filetypes=[("Tiff images", "*.tif;*.tiff")] )
     file_name, file_extension = os.path.splitext( filepath )
     file_name = os.path.basename(file_name)
 
-    return size_distribution(os.path.dirname(filepath), file_name, file_extension, analyze_color_name=analyze_color_name, verbose=verbose)
+    return size_distribution(os.path.dirname(filepath), file_name, file_extension, analyze_color_name=analyze_color_name, analyze_color_BGR=analyze_color_BGR, min_cld_length=min_cld_length, color_id=color_id, force_reprocessing=force_reprocessing, verbose=verbose)
 
 class size_distribution():
     progressFactor = 500
@@ -59,10 +60,13 @@ class size_distribution():
     tile_area = 0
 
     scaling = es.getEmptyScaling()
-    pore_diameter_limit = 100 #nm
 
+    channel_count = 1
     black = 0
     white = 255
+    available_colors = []
+
+    min_cld_length = 1
 
     folder = ''
     output_folder = ''
@@ -82,13 +86,13 @@ class size_distribution():
         radius = diameter/2
         return 4/3*(math.pi*(radius**3))
 
-    def getPoreVolume( self, diameter=None, area=None ):
-        if diameter == None: diameter = getPoreDiameter( area )
+    def getPoreVolume( self, diameter=None ):#, area=None ):
+        #if diameter == None: diameter = getPoreDiameter( area )
         radius = diameter/2
         return 4/3*(math.pi*(radius**3))
 
-    def getPoreSurface( self, diameter=None, area=None ):
-        if diameter == None: diameter = getPoreDiameter( area )
+    def getPoreSurface( self, diameter=None ):#, area=None ):
+        #if diameter == None: diameter = getPoreDiameter( area )
         radius = diameter/2
         return (4*math.pi*(radius**2))
 
@@ -113,44 +117,87 @@ class size_distribution():
                 exit()
         return False
 
-    def load_binary_image_from_grayscale(self):
-        self.scaling = es.autodetectScaling( self.filename, self.folder )
-        self.img = cv2.imread( self.folder + os.sep + self.filename, cv2.IMREAD_GRAYSCALE )
+    # plot the raw image next to the thresholded image
+    def plot_images(self):
+        fig = plt.figure(figsize=(12,8), dpi= 100)
+        fig.add_subplot(1, 2, 1)
 
+        plot_axis_scaling = [0,self.get_scaled_width(),0,self.get_scaled_height()]
+
+        if self.channel_count == 3:
+            plt.imshow( numpy.array(cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)), extent=plot_axis_scaling );
+        else:
+            plt.imshow( self.img, extent=plot_axis_scaling, cmap='gray' );
+        plt.title('original: {} in {}'.format(self.filename, self.scaling['unit']), fontsize=8);
+
+        fig.add_subplot(1, 2, 2)
+        plt.imshow( self.thresh_img, extent=plot_axis_scaling, cmap='gray' );
+        plt.title('binarized: {} in {}'.format(self.filename, self.scaling['unit']), fontsize=8);
+
+    def get_available_colors(self):
+        if len(self.available_colors) < 1:
+            for x in self.img[0]:
+                if list(x) not in self.available_colors:
+                    self.available_colors.append(list(x))
+        return self.available_colors
+
+    def get_image_channel_count(self):
+        if len(self.img.shape) >= 2:
+            self.channel_count = self.img.shape[-1]
+        return self.channel_count
+
+    def load_binary_image(self, color=None):
+        self.scaling = es.autodetectScaling( self.filename, self.folder )
+        self.img = cv2.imread( self.folder + os.sep + self.filename, -1 )
         if self.img is None:
             print( 'Error loading {}'.format(self.filename))
             exit()
 
+        channel_count = self.get_image_channel_count()
+
+        if channel_count == 3:
+            #self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
+            self.load_binary_image_from_color(color=self.analyze_color_BGR, color_id=self.color_id)
+        else:
+            #self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
+            self.load_binary_image_from_binary()
+
+    def load_binary_image_from_binary(self):
         #binarizes an image
         #img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         min_val = self.black #int( (self.ignore_Color+1)/2 ) if self.ignore_Color > self.analyze_Color else self.analyze_Color
         max_val = int( (self.white+1)/2 ) #int( (self.analyze_Color+1)/2 ) if self.analyze_Color > self.ignore_Color else self.ignore_Color
         _, self.thresh_img = cv2.threshold(self.img, min_val, max_val, cv2.THRESH_BINARY)
 
-    def load_binary_image_from_color(self, color=(25,25,25)):
-        self.scaling = es.autodetectScaling( self.filename, self.folder )
-        self.img = cv2.imread( self.folder + os.sep + self.filename, cv2.COLOR_BGR2HSV )
-
-        if self.img is None:
-            print( 'Error loading {}'.format(self.filename))
-            exit()
+    # Directly define a color to select or define a color_id.
+    # The color id is not constant! The color order is defined by appearance within the image!
+    def load_binary_image_from_color(self, color=None, color_id=0):
+        available_colors = self.get_available_colors()
+        if not color==None:
+            color_found = False
+            for avaiable_color in available_colors:
+                if list(avaiable_color) == list(color):
+                    color = numpy.array(color)
+                    color_found = True
+            if not color_found:
+                print('  Color R{} G{} B{} does not exist in the loaded image! Available colors:'.format(color[0], color[1], color[2]))
+                print(available_colors)
+                color = numpy.array(available_colors[color_id])
+        else:
+            print('  Using color B{} G{} R{}! Available colors:'.format(available_colors[color_id][0], available_colors[color_id][1], available_colors[color_id][2]))
+            print(available_colors)
+            color = numpy.array(available_colors[color_id])
 
         #binarizes an image
         min_val = color
         max_val = color
-        _, self.thresh_img = cv2.inRange(self.img, min_val, max_val)
-
-
-        #cv2.calcHist( &hsv, 1, channels, Mat(), // do not use mask
-        #     hist, 2, histSize, ranges,
-        #     true, // the histogram is uniform
-        #     false );
+        self.thresh_img = cv2.inRange(self.img, min_val, max_val)
 
     def get_file(self, file_name, file_extension, process_position=None, verbose=False ):
         processID = ' '
         if process_position != None: processID = " #{}: ".format(process_position)
         self.filename = file_name + file_extension
-        self.load_binary_image_from_grayscale()
+        self.load_binary_image()
 
         if verbose: print( '{}Analysing {}'.format(processID, self.filename) )
 
@@ -238,7 +285,7 @@ class size_distribution():
                         isBorder = ( lastChangedPos < 0 or borderReached )
                         length = x - lastChangedPos
                         if ( (value != lastValue and value == self.ignore_Color) or ( lastChangedPos > 0 and value != self.ignore_Color and isBorder and not ignoreBorder ) ): # if ignore_Color appears, a completed void line is detected
-                            if ( length != self.tile_width and length > minLength ):
+                            if ( length != self.tile_width and length > self.min_cld_length ):
                                 lineCount += 1
                                 usedImageArea += length
                                 result_row = self.process_result_row( file_index, diameter=length )
@@ -261,7 +308,7 @@ class size_distribution():
                         isBorder = ( lastChangedPos < 0 or borderReached )
                         length = y - lastChangedPos
                         if ( (value != lastValue and value == self.ignore_Color) or ( lastChangedPos > 0 and value != self.ignore_Color and isBorder and not ignoreBorder ) ): # if ignore_Color appears, a completed void line is detected
-                            if ( length != self.tile_height and length > minLength ):
+                            if ( length != self.tile_height and length > self.min_cld_length ):
                                 lineCount += 1
                                 usedImageArea += length
                                 result_row = self.process_result_row( file_index, diameter=length )
@@ -302,6 +349,7 @@ class size_distribution():
         bin_count = round( max_value/self.scaling['x']+2 )
 
         if as_pixel:
+            print('  bins are scaled as px!')
             bins = [i for i in range(0,bin_count,step)]
         else:
             bins = [round(i*self.scaling['x'],4) for i in range(0,bin_count,step)]
@@ -318,6 +366,7 @@ class size_distribution():
 
         return histogram[0], numpy.round( numpy.array(bins, dtype=numpy.float32)*scale,4)
 
+    """
     def clean_histogram(self, histogram, bins, power=1):
         if power > 1:
             pow_bins = []#bins
@@ -336,6 +385,7 @@ class size_distribution():
             pow_bins = bins
             cleaned_hist = histogram
         return cleaned_hist, [bins[0]]+pow_bins
+    """
 
     def get_basic_values(self, column, df):
         max_vals = df.max(axis=0)
@@ -352,7 +402,7 @@ class size_distribution():
     def get_values_above(self, series, value):
         return numpy.where( list(series) > value )
 
-    def __init__(self, folder, file_name, file_extension, analyze_color_name='black', force_reprocessing=False, verbose=False):
+    def __init__(self, folder, file_name, file_extension, analyze_color_name='white', analyze_color_BGR=None, color_id=0, min_cld_length=1, force_reprocessing=False, verbose=False):
         self.set_color_to_be_analyzed( analyze_color_name )
 
         self.folder = folder
@@ -367,6 +417,8 @@ class size_distribution():
         cld_csv_path = self.output_folder + file_name + '_cld.csv'
 
         print('-'*50)
+        self.color_id = color_id
+        self.analyze_color_BGR = analyze_color_BGR
         self.get_file(file_name, file_extension, verbose=verbose)
 
         # pore size distribution
@@ -381,6 +433,7 @@ class size_distribution():
 
         # chord length distribution
         if not os.path.isfile( cld_csv_path ) or force_reprocessing:
+            self.min_cld_length = min_cld_length
             self.cld_df = pd.DataFrame(columns = dataframe_columns)
             self.process_directional_CLD(self.thresh_img, 'horizontal', verbose=verbose)
             print('-'*50)
