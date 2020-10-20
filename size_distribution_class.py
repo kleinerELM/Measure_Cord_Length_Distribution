@@ -345,11 +345,11 @@ class size_distribution():
         #ax0.bar(cld_x.bin_centers,cld_x.relfreq,width=cld_x.bin_widths,edgecolor='k')
         #ax1.bar(cld_y.bin_centers,cld_y.relfreq,width=cld_y.bin_widths,edgecolor='k')
 
-    def get_histogram_bins(self, max_value, step, as_pixel=False):
+    def get_histogram_bins(self, max_value, step, as_pixel=False, verbose=False):
         bin_count = round( max_value/self.scaling['x']+2 )
 
         if as_pixel:
-            print('  bins are scaled as px!')
+            if verbose: print('  bins are scaled as px!')
             bins = [i for i in range(0,bin_count,step)]
         else:
             bins = [round(i*self.scaling['x'],4) for i in range(0,bin_count,step)]
@@ -444,6 +444,7 @@ class size_distribution():
             self.cld_df = pd.read_csv( cld_csv_path )
             print('loaded cld csv')
 
+        if self.scaling['unit'] == 'px': print('scaled as PX!!!')
 
         #self.get_porespy_CLD(self.thresh_img)
         #print('-'*50)
