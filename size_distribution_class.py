@@ -53,12 +53,14 @@ def singeFileProcess(analyze_color_name='white',analyze_color_BGR=[0,0,255], min
     return size_distribution(os.path.dirname(filepath), file_name, file_extension, analyze_color_name=analyze_color_name, analyze_color_BGR=analyze_color_BGR, min_cld_length=min_cld_length, color_id=color_id, force_reprocessing=force_reprocessing, verbose=verbose)
 
 class size_distribution():
+    coreCount = multiprocessing.cpu_count()
+    processCount = (coreCount - 1) if coreCount > 1 else 1
+
     progressFactor = 500
     image_count = 0
     tile_width = 0
     tile_height = 0
     tile_area = 0
-
     scaling = es.getEmptyScaling()
 
     channel_count = 1
@@ -67,6 +69,10 @@ class size_distribution():
     available_colors = []
 
     min_cld_length = 1
+    cld_result = []
+    psd_result = []
+
+    #result_dataframe_columns = ['file_index', 'diameter', 'area', 'surface', 'volume']
 
     folder = ''
     output_folder = ''
@@ -86,13 +92,11 @@ class size_distribution():
         radius = diameter/2
         return 4/3*(math.pi*(radius**3))
 
-    def getPoreVolume( self, diameter=None ):#, area=None ):
-        #if diameter == None: diameter = getPoreDiameter( area )
+    def getPoreVolume( self, diameter=None ):
         radius = diameter/2
         return 4/3*(math.pi*(radius**3))
 
-    def getPoreSurface( self, diameter=None ):#, area=None ):
-        #if diameter == None: diameter = getPoreDiameter( area )
+    def getPoreSurface( self, diameter=None ):
         radius = diameter/2
         return (4*math.pi*(radius**2))
 
@@ -107,7 +111,7 @@ class size_distribution():
             self.tile_width = width
             self.tile_height = height
             self.tile_area = height*width
-            print('size: {} x {} {} / {} x {} px '.format(self.get_scaled_width(),self.get_scaled_height(),self.scaling['unit'],width,height))
+            print('size: {:.2f} x {:.2f} {} / {} x {} px '.format(self.get_scaled_width(),self.get_scaled_height(),self.scaling['unit'],width,height))
             return True
         else:
             if self.tile_width == width and self.tile_height == height:
@@ -234,32 +238,38 @@ class size_distribution():
             }
         return result_row
 
-    def processPSD( self, img, processID = ' ', verbose=False ):
+    def processPSD( self, img, processID = ' ', start_pos = None, end_pos = None, verbose=False ):
         processID = ' '
 
         contours, _ = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        #print(len(self.analyzed_files_DF))
-        #print(self.analyzed_files_DF.iloc[-1])
-        areas = []
-        contourCount = len(contours)
-        file_index = int(len(self.analyzed_files_DF)-1)
-        emptyArea = 0
 
         startTime = int(round(time.time() * 1000))
-        for i in range(0, contourCount):
-            area = cv2.contourArea(contours[i])
-            result_row = self.process_result_row( file_index, area=area )
-            if result_row != False:
-                self.psd_df = self.psd_df.append(result_row, ignore_index=True)
-                if i % self.progressFactor == 0 and verbose: print( "{}...processing particle #{}/{}".format(processID, i, contourCount ))#, end="\r")
-            else:
-                emptyArea += 1
-        if verbose:
-            print( '{}Analysed particles: {}, ignored 0-values: {}, finished in {} ms'.format(processID, contourCount-emptyArea, emptyArea, int(round(time.time() * 1000)) - startTime) )
-            #self.psd_df.to_csv( self.output_folder + file_name + '_pores.csv', index=False )
-            #print(self.psd_df)
+        processCount = self.processCount if self.processCount <=3 else 3
+        pool = multiprocessing.Pool(processCount)
+        start_pos = 0
+        start_pos = 0
+        for pos in range(processCount):
+            end_pos = int(len(contours)/processCount * (pos+1))
+            pool.apply_async(self.processPSD_subprocess, args=(contours, ' PID{:02d} '.format(pos+1) , start_pos, end_pos, verbose), callback = self.append_PSD_result)
+            start_pos = end_pos
+        pool.close()
+        pool.join()
 
-    def process_directional_CLD( self, img, direction, processID = ' ', verbose=False):
+        self.psd_df = pd.DataFrame(self.psd_result)
+        if verbose:
+            print( '{}Analysed particles: {}, ignored 0-values: {}, finished in {} ms'.format(processID, len(self.psd_result), len(contours)-len(self.psd_result), int(round(time.time() * 1000)) - startTime) )
+
+    def processPSD_subprocess(self, contours, processID, start_pos, end_pos, verbose=False):
+        if verbose: print( '{}processing pore size distribution (pore {}-{})'.format(processID, start_pos, end_pos) )
+        file_index = int(len(self.analyzed_files_DF)-1)
+        result_list = []
+        for i in range(start_pos, end_pos):
+            result_row = self.process_result_row( file_index, area=cv2.contourArea(contours[i]) )
+            if result_row != False:
+                result_list.append( result_row )
+        return result_list
+
+    def process_directional_CLD_MT( self, img, direction, processID = ' ', start_pos = None, end_pos = None, verbose=False):
         file_index = int(len(self.analyzed_files_DF)-1)
 
         ignoreBorder = True
@@ -267,68 +277,69 @@ class size_distribution():
 
         #process variables
         lineCount = 0
-        lastValue = -1      # var to save the last value
+        lastValue = -1        # var to save the last value
         lastChangedPos = -1   # var to save the last position
         usedImageArea = 0
         fullPoreArea = 0
 
-        if verbose: print( '  processing {} cord length distribution'.format(direction) )#, end='' )
-        startTime = int(round(time.time() * 1000))
-        if ( direction == 'horizontal' ):
-            for y in range(self.tile_height):
-                if y % self.progressFactor == 0 and verbose: print('  ... line {} of {}'.format(y, self.tile_height))#, end="\r")
-                for x in range(self.tile_width):
-                    value = img[y,x]#.getpixel((x,y))
-                    borderReached = (x == self.tile_width-1)
+        if ( direction == 'horizontal' or direction == 'vertical' ):
+            result = []
+
+            max_a = self.tile_height if direction == 'horizontal' else self.tile_width
+
+            if end_pos == None: end_pos = max_a
+            if start_pos == None: start_pos = 0
+            range_a = range(start_pos, end_pos)
+
+            max_b = self.tile_width if direction == 'horizontal' else self.tile_height
+            if verbose: print( '{}processing {} cord length distribution (lines {}-{})'.format(processID, direction, start_pos, end_pos) )
+
+            if verbose: startTime = int(round(time.time() * 1000))
+            pixel_cnt = 0
+            for a in range_a:
+                #if a % self.progressFactor == 0 and verbose: print('{} line {} of {}'.format(processID, a, max_a))#, end="\r")
+                for b in range(max_b):
+                    x = b if direction == 'horizontal' else a
+                    y = a if direction == 'horizontal' else b
+                    value = img[y,x]
+
+                    borderReached = (b == max_b-1)
                     if ( value != self.ignore_Color ): fullPoreArea +=1
                     if ( value != lastValue or borderReached ):
                         isBorder = ( lastChangedPos < 0 or borderReached )
-                        length = x - lastChangedPos
-                        if ( (value != lastValue and value == self.ignore_Color) or ( lastChangedPos > 0 and value != self.ignore_Color and isBorder and not ignoreBorder ) ): # if ignore_Color appears, a completed void line is detected
-                            if ( length != self.tile_width and length > self.min_cld_length ):
+                        length = b - lastChangedPos
+                        # if ignore_Color appears, a completed void line is detected
+                        if ( (value != lastValue and value == self.ignore_Color)
+                              or ( lastChangedPos > 0 and value != self.ignore_Color and isBorder and not ignoreBorder ) ):
+
+                            if ( length < max_b and length > self.min_cld_length ):
                                 lineCount += 1
                                 usedImageArea += length
                                 result_row = self.process_result_row( file_index, diameter=length )
-                                self.cld_df = self.cld_df.append(result_row, ignore_index=True)
+                                result.append(result_row)
+                                #self.cld_df = self.cld_df.append(result_row, ignore_index=True)
                         if ( borderReached ):
                             lastChangedPos = -1
                             lastValue = self.ignore_Color
                         else:
-                            lastChangedPos = x
+                            lastChangedPos = b
                     lastValue = value
 
-        elif ( direction == 'vertical' ):
-            for x in range(self.tile_width):
-                if x % self.progressFactor == 0 and verbose: print('  ... line {} of {}'.format(x, self.tile_width))#, end="\r")
-                for y in range(self.tile_height):
-                    value = img[y,x]#.getpixel((x,y))
-                    borderReached = (y == self.tile_height-1)
-                    if ( value != self.ignore_Color ): fullPoreArea +=1
-                    if ( value != lastValue or borderReached ):
-                        isBorder = ( lastChangedPos < 0 or borderReached )
-                        length = y - lastChangedPos
-                        if ( (value != lastValue and value == self.ignore_Color) or ( lastChangedPos > 0 and value != self.ignore_Color and isBorder and not ignoreBorder ) ): # if ignore_Color appears, a completed void line is detected
-                            if ( length != self.tile_height and length > self.min_cld_length ):
-                                lineCount += 1
-                                usedImageArea += length
-                                result_row = self.process_result_row( file_index, diameter=length )
-                                self.cld_df = self.cld_df.append(result_row, ignore_index=True)
-                        if ( borderReached ):
-                            lastChangedPos = -1
-                            lastValue = self.ignore_Color
-                        else:
-                            lastChangedPos = y
-                    lastValue = value
+            if verbose:
+                print( "{} {} lines measured. {:.2f} of {:.2f} area-% were taken into account".format(processID, lineCount, 100/self.tile_area*usedImageArea, 100/self.tile_area*fullPoreArea))#, end='' )
+            return result
         else:
             print( "  unknown direction '{}'".format(direction) )
 
-        if verbose:
-            print( "   {} lines measured in {} ms".format(lineCount, int(round(time.time() * 1000)) - startTime), end='' )
-            print( "   {:.2f} of {:.2f} area-% were taken into account".format(100/self.tile_area*usedImageArea, 100/self.tile_area*fullPoreArea) )
+    def append_CLD_result(self, result_list):
+        self.cld_result += result_list
 
-    def processCLD( self, img, processID=' ', process_position=None, verbose=False ):
-        self.process_directional_CLD(img, 'horizontal', verbose=verbose)
-        self.process_directional_CLD(img, 'vertical', verbose=verbose)
+    def append_PSD_result(self, result_list):
+        self.psd_result += result_list
+
+    def merge_result(self, df, result_list):
+        result_df = pd.DataFrame(result_list)
+        df.append(result_df, ignore_index=True)
 
     def get_porespy_CLD(self, img):
         print('processing CLD using porespy')
@@ -338,12 +349,8 @@ class size_distribution():
 
         chords_y = porespy.filters.apply_chords(img, axis=1, spacing=1, trim_edges=True)
         cld_y = porespy.metrics.chord_length_distribution(chords_y, bins=100, log=True)
-        #print(len(chords_x), len(chords_y))
-        #print(chords_x, chords_y)
+
         print('finished in {} ms'.format(int(round(time.time() * 1000)) - startTime))
-        #fig, (ax0, ax1) = plt.subplots( ncols=2, nrows=1, figsize=(20,10) )
-        #ax0.bar(cld_x.bin_centers,cld_x.relfreq,width=cld_x.bin_widths,edgecolor='k')
-        #ax1.bar(cld_y.bin_centers,cld_y.relfreq,width=cld_y.bin_widths,edgecolor='k')
 
     def get_histogram_bins(self, max_value, step, as_pixel=False, verbose=False):
         bin_count = round( max_value/self.scaling['x']+2 )
@@ -365,27 +372,6 @@ class size_distribution():
         histogram = numpy.histogram(list(series), bins=bins)
 
         return histogram[0], numpy.round( numpy.array(bins, dtype=numpy.float32)*scale,4)
-
-    """
-    def clean_histogram(self, histogram, bins, power=1):
-        if power > 1:
-            pow_bins = []#bins
-            maxval = numpy.amax(bins)
-            cleaned_hist = []
-            pos = 0
-            deleted = 0
-            for value in histogram:
-                if value > 0:
-                    pow_bins.append(bins[pos])
-                    cleaned_hist.append(value)
-                pos += 1
-            #print(len(pow_bins), len(cleaned_hist))
-            #print((pow_bins), (cleaned_hist))
-        else:
-            pow_bins = bins
-            cleaned_hist = histogram
-        return cleaned_hist, [bins[0]]+pow_bins
-    """
 
     def get_basic_values(self, column, df):
         max_vals = df.max(axis=0)
@@ -411,7 +397,6 @@ class size_distribution():
         self.target_folder = os.path.abspath(os.path.join(self.folder, os.pardir))
 
         self.analyzed_files_DF = pd.DataFrame(columns = ['filename' , 'height', 'width'])
-        dataframe_columns = ['file_index', 'diameter', 'area', 'surface', 'volume']
 
         psd_csv_path = self.output_folder + file_name + '_psd.csv'
         cld_csv_path = self.output_folder + file_name + '_cld.csv'
@@ -423,22 +408,55 @@ class size_distribution():
 
         # pore size distribution
         if not os.path.isfile( psd_csv_path ) or force_reprocessing:
-            self.psd_df = pd.DataFrame(columns = dataframe_columns)
+            #self.psd_df = pd.DataFrame(columns = self.result_dataframe_columns)
             self.processPSD(self.thresh_img, verbose=verbose)
             self.psd_df.to_csv(psd_csv_path)
-            print('-'*50)
         else:
             self.psd_df = pd.read_csv( psd_csv_path )
             print('loaded psd csv')
 
+        print('-'*50)
         # chord length distribution
         if not os.path.isfile( cld_csv_path ) or force_reprocessing:
             self.min_cld_length = min_cld_length
-            self.cld_df = pd.DataFrame(columns = dataframe_columns)
-            self.process_directional_CLD(self.thresh_img, 'horizontal', verbose=verbose)
+            #self.cld_df = pd.DataFrame(columns = self.result_dataframe_columns)
+
+            # There is a time penalty using to many threads. The loading time of the images and libaries seem to hav a huge imact on the multithreading performance.
+            # Therefore, the horizontal and vertical CLD is calculated parallel in few threads instead a single direction on all available threads!
+            # Up to two cores will idle in this time.
+            processes_per_direction = int(self.processCount/2)
+            process_range = range(processes_per_direction) if processes_per_direction > 1 else range(1)
+            pool_size = processes_per_direction*2 if processes_per_direction > 1 else 1
+
+            print( 'processing cld using {} threads'.format(pool_size) )
+            startTime = int(round(time.time() * 1000))
+            pool = multiprocessing.Pool( pool_size )
+            h_start_pos = 0
+            v_start_pos = 0
+            pid = 0
+            for pos in process_range:
+                pid += 1
+                h_end_pos = int(self.tile_height/processes_per_direction * (pos+1))
+                pool.apply_async(self.process_directional_CLD_MT, args=(self.thresh_img, 'horizontal', ' PID{:02d} '.format(pid) , h_start_pos, h_end_pos, verbose), callback = self.append_CLD_result)
+                h_start_pos = h_end_pos
+
+                pid += 1
+                v_end_pos = int(self.tile_width/processes_per_direction * (pos+1))
+                pool.apply_async(self.process_directional_CLD_MT, args=(self.thresh_img, 'vertical', ' PID{:02d} '.format(pid) , v_start_pos, v_end_pos, verbose), callback = self.append_CLD_result)
+                v_start_pos = v_end_pos
+            pool.close()
+            pool.join()
+            print( 'finished processing {} lines in {} ms'.format(len(self.cld_result), int(round(time.time() * 1000)) - startTime) )
+
             print('-'*50)
-            self.process_directional_CLD(self.thresh_img, 'vertical', verbose=verbose)
-            print('-'*50)
+
+            self.cld_df = pd.DataFrame(self.cld_result)
+
+            #self.process_directional_CLD(self.thresh_img, 'horizontal', verbose=verbose)
+            #print('-'*50)
+            #self.process_directional_CLD(self.thresh_img, 'vertical', verbose=verbose)
+            #print('-'*50)
+
             self.cld_df.to_csv(cld_csv_path)
         else:
             self.cld_df = pd.read_csv( cld_csv_path )
