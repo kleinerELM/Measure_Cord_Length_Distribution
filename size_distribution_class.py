@@ -151,36 +151,13 @@ class size_distribution():
     cld_result = []
     psd_result = []
 
-    histograms_CLD = []
-    histograms_PSD = []
+    histogram_CLD = []
+    histogram_PSD = []
+    histogram_bins = [{'unscaled_diameter':[], 'diameter':[], 'area':[], 'surface':[], 'volume':[]}]
     #result_dataframe_columns = ['file_index', 'diameter', 'area', 'surface', 'volume']
 
     folder = ''
     output_folder = ''
-
-    def process_histograms(self):
-        column = 'diameter'
-        max_value = 10000
-        hist, bins = self.get_histogram_list( self.cld_result[column], max_value)
-        """
-        first_value_id = next(i for i,v in enumerate(hist) if v > 0)
-        x_min = bins[first_value_id]-psd.scaling['x']
-        if column=='area':
-            x_axis_type='log'
-            x_min = psd.getPoreArea( x_min )
-            bins = psd.getPoreArea( bins )
-        elif column=='volume':
-            x_axis_type='log'
-            x_min = psd.getPoreVolume( x_min )
-            bins = psd.getPoreVolume( bins )
-        elif column=='surface':
-            x_axis_type='log'
-            x_min = psd.getPoreSurface( x_min )
-            bins = psd.getPoreSurface( bins )
-        else:
-            x_axis_type='linear'
-            x_min = bins[first_value_id]-psd.scaling['x']
-        """
 
     def set_color_to_be_analyzed( self, color_name ):
         if color_name == "white":
@@ -457,9 +434,11 @@ class size_distribution():
 
         print('finished in {} ms'.format(int(round(time.time() * 1000)) - startTime))
 
-    def get_histogram_bins(self, max_value, step, as_pixel=False, verbose=False):
+    # max_value has to be given in the same unit as in self.scaling['unit']
+    def get_histogram_bins(self, max_value, step=1, as_pixel=False, verbose=False):
         bin_count = round( max_value/self.scaling['x']+2 )
 
+        if self.scaling['unit'] == 'px': as_pixel = True
         if as_pixel:
             if verbose: print('  bins are scaled as px!')
             bins = [i for i in range(0,bin_count,step)]
@@ -468,22 +447,41 @@ class size_distribution():
 
         return bins
 
-    def get_histogram_list(self, df, column, max_value=100, step=1, power=1):
+    # max_value has to be given in the same unit as in self.scaling['unit']
+    def get_histogram_list(self, dist_type, column):
+        #if max_value == None: max_value=(self.scaling['x']*self.tile_width)/2
 
-        px_bins = self.get_histogram_bins(max_value, step, as_pixel=True)
+        histogram = self.histogram_PSD if dist_type == 'psd' else self.histogram_CLD
+
+        return histogram, self.histogram_bins[column]
+
+    def process_histograms(self, max_value=None):
+        if max_value == None: max_value=(self.scaling['x']*self.tile_width)
 
         # scale the bins
-        bins = numpy.round( numpy.array(px_bins, dtype=numpy.float32)*self.scaling['x'], 4)
-        if column=='area':
-            bins = self.getPoreArea( bins )
-        elif column=='volume':
-            bins = self.getPoreVolume( bins )
-        elif column=='surface':
-            bins = self.getPoreSurface( bins )
+        bins = self.get_histogram_bins(max_value)
+        self.histogram_bins = {
+            'unscaled_diameter': self.get_histogram_bins(max_value, as_pixel=True),
+            'diameter':          bins,
+            'area':              list(map(self.getPoreArea, bins)),
+            'surface':           list(map(self.getPoreSurface, bins)),
+            'volume':            list(map(self.getPoreVolume, bins))
+        }
 
-        histogram = numpy.histogram(list(df[column]), bins=bins)
+        histogram = numpy.histogram(list(self.cld_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
+        self.histogram_CLD = histogram[0]
 
-        return histogram[0], bins
+        histogram = numpy.histogram(list(self.psd_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
+        self.histogram_PSD = histogram[0]
+
+    def get_cleaned_histogram_list(self, dist_type, column):
+
+        histogram, bins = self.get_histogram_list(dist_type, column)
+
+        first_value_id = next(i for i,v in enumerate(histogram) if v > 0)
+        last_value_id = next(i for i,v in enumerate(numpy.flip(histogram)) if v > 0) *-1
+
+        return histogram[first_value_id:last_value_id], bins[first_value_id:last_value_id]
 
     def get_basic_values(self, column, df):
         max_vals = df.max(axis=0)
@@ -589,6 +587,8 @@ class size_distribution():
         else:
             self.cld_df = pd.read_csv( cld_csv_path, index_col=0 )
             print('loaded cld csv')
+
+        self.process_histograms()
 
         if self.scaling['unit'] == 'px': print('scaled as PX!!!')
 
