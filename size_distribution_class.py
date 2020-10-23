@@ -447,13 +447,6 @@ class size_distribution():
 
         return bins
 
-    # max_value has to be given in the same unit as in self.scaling['unit']
-    def get_histogram_list(self, dist_type, column):
-        #if max_value == None: max_value=(self.scaling['x']*self.tile_width)/2
-
-        histogram = self.histogram_PSD if dist_type == 'psd' else self.histogram_CLD
-
-        return histogram, self.histogram_bins[column]
 
     def process_histograms(self, max_value=None):
         if max_value == None: max_value=(self.scaling['x']*self.tile_width)
@@ -474,9 +467,21 @@ class size_distribution():
         histogram = numpy.histogram(list(self.psd_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
         self.histogram_PSD = histogram[0]
 
-    def get_cleaned_histogram_list(self, dist_type, column):
+    # max_value has to be given in the same unit as in self.scaling['unit']
+    def get_histogram_list(self, dist_type, x_column, y_column='count'):
+        #if max_value == None: max_value=(self.scaling['x']*self.tile_width)/2
 
-        histogram, bins = self.get_histogram_list(dist_type, column)
+        histogram = self.histogram_PSD if dist_type == 'psd' else self.histogram_CLD
+
+        if y_column != 'count':
+            y_bin = self.histogram_bins[ y_column ]
+            histogram = histogram * numpy.array(y_bin[1:])
+
+        return histogram, self.histogram_bins[x_column]
+
+    def get_cleaned_histogram_list(self, dist_type, x_column, y_column):
+
+        histogram, bins = self.get_histogram_list(dist_type, x_column, y_column)
 
         first_value_id = next(i for i,v in enumerate(histogram) if v > 0)
         last_value_id = next(i for i,v in enumerate(numpy.flip(histogram)) if v > 0) *-1
