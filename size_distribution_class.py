@@ -61,6 +61,8 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
     cld_df = None
     psd_df = None
 
+    psd_df = None
+
     ## count files
     if os.path.isdir( workingDirectory ) :
         startTime = int(round(time.time() * 1000))
@@ -71,21 +73,41 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
 
         print( 'Found {} files...'.format(count) )
 
+        position = 0
         for file in fileList:
             if ( file.endswith(".tif") or file.endswith(".TIF")):
                 file_name, file_extension = os.path.splitext( file )
+                position += 1
+                print('File {} of {}'.format(position, count))
                 sd = size_distribution(workingDirectory, file_name, file_extension, analyze_color_name=analyze_color_name, analyze_color_BGR=analyze_color_BGR, force_use_color=force_use_color, min_cld_length=min_cld_length, force_reprocessing=force_reprocessing, verbose=verbose)
 
                 if not isinstance(cld_df, pd.DataFrame):
                     cld_df = sd.cld_df.copy()
                     psd_df = sd.psd_df.copy()
-                    print(sd.cld_df)
+                    histogram, bins = sd.get_histogram_list('cld', 'diameter')
+                    with open(workingDirectory + os.sep + 'CLD_complete_histograms.csv', 'w', newline='', encoding='utf-8') as myfile:
+                        wr = csv.writer(myfile)
+                        wr.writerow(bins)
+                        wr.writerow(histogram)
+                    histogram, bins = sd.get_histogram_list('psd', 'diameter')
+                    with open(workingDirectory + os.sep + 'PSD_complete_histograms.csv', 'w', newline='', encoding='utf-8') as myfile:
+                        wr = csv.writer(myfile)
+                        wr.writerow(bins)
+                        wr.writerow(histogram)
                 else:
                     cld_df = pd.concat([cld_df, sd.cld_df], ignore_index=True)
                     psd_df = pd.concat([psd_df, sd.psd_df], ignore_index=True)
-                break
-        cld_df.to_csv(workingDirectory + 'CLD_complete.csv')
-        psd_df.to_csv(workingDirectory + 'PSD_complete.csv')
+                    histogram, bins = sd.get_histogram_list('cld', 'diameter')
+                    with open(workingDirectory + os.sep + 'CLD_complete_histograms.csv', 'a', newline='', encoding='utf-8') as myfile:
+                        wr = csv.writer(myfile)
+                        wr.writerow(histogram)
+                    histogram, bins = sd.get_histogram_list('psd', 'diameter')
+                    with open(workingDirectory + os.sep + 'PSD_complete_histograms.csv', 'a', newline='', encoding='utf-8') as myfile:
+                        wr = csv.writer(myfile)
+                        wr.writerow(histogram)
+
+        cld_df.to_csv(workingDirectory + os.sep + 'CLD_complete.csv')
+        psd_df.to_csv(workingDirectory + os.sep + 'PSD_complete.csv')
         print('finished processing of {} files in {:.2f} s'.format(count, (int(round(time.time() * 1000)) - startTime)/1000))
         print('found {} pores and measured {} lines'.format(len(psd_df), len(cld_df)))
 
