@@ -65,6 +65,8 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
 
     ## count files
     if os.path.isdir( workingDirectory ) :
+        cld_complete_histogram_csv = workingDirectory + os.sep + 'CLD_complete_histograms.csv'
+        psd_complete_histogram_csv = workingDirectory + os.sep + 'PSD_complete_histograms.csv'
         startTime = int(round(time.time() * 1000))
         for file in os.listdir(workingDirectory):
             if ( file.endswith(".tif") or file.endswith(".TIF")):
@@ -85,12 +87,12 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
                     cld_df = sd.cld_df.copy()
                     psd_df = sd.psd_df.copy()
                     histogram, bins = sd.get_histogram_list('cld', 'diameter')
-                    with open(workingDirectory + os.sep + 'CLD_complete_histograms.csv', 'w', newline='', encoding='utf-8') as myfile:
+                    with open(cld_complete_histogram_csv, 'w', newline='', encoding='utf-8') as myfile:
                         wr = csv.writer(myfile)
                         wr.writerow(bins)
                         wr.writerow(histogram)
                     histogram, bins = sd.get_histogram_list('psd', 'diameter')
-                    with open(workingDirectory + os.sep + 'PSD_complete_histograms.csv', 'w', newline='', encoding='utf-8') as myfile:
+                    with open(psd_complete_histogram_csv, 'w', newline='', encoding='utf-8') as myfile:
                         wr = csv.writer(myfile)
                         wr.writerow(bins)
                         wr.writerow(histogram)
@@ -98,11 +100,11 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
                     cld_df = pd.concat([cld_df, sd.cld_df], ignore_index=True)
                     psd_df = pd.concat([psd_df, sd.psd_df], ignore_index=True)
                     histogram, bins = sd.get_histogram_list('cld', 'diameter')
-                    with open(workingDirectory + os.sep + 'CLD_complete_histograms.csv', 'a', newline='', encoding='utf-8') as myfile:
+                    with open(cld_complete_histogram_csv, 'a', newline='', encoding='utf-8') as myfile:
                         wr = csv.writer(myfile)
                         wr.writerow(histogram)
                     histogram, bins = sd.get_histogram_list('psd', 'diameter')
-                    with open(workingDirectory + os.sep + 'PSD_complete_histograms.csv', 'a', newline='', encoding='utf-8') as myfile:
+                    with open(psd_complete_histogram_csv, 'a', newline='', encoding='utf-8') as myfile:
                         wr = csv.writer(myfile)
                         wr.writerow(histogram)
 
@@ -110,6 +112,9 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
         psd_df.to_csv(workingDirectory + os.sep + 'PSD_complete.csv')
         print('finished processing of {} files in {:.2f} s'.format(count, (int(round(time.time() * 1000)) - startTime)/1000))
         print('found {} pores and measured {} lines'.format(len(psd_df), len(cld_df)))
+        cld_complete_histogram_df = pd.read_csv( cld_complete_histogram_csv )
+        psd_complete_histogram_df = pd.read_csv( psd_complete_histogram_csv )
+        return sd, cld_complete_histogram_df, psd_complete_histogram_df
 
 #https://scipy-cookbook.readthedocs.io/items/SignalSmooth.html
 def smooth_histogram(x, window_len=7, window='hanning'):
@@ -351,7 +356,6 @@ class size_distribution():
         processCount = self.processCount if self.processCount <=3 else 3
         pool = multiprocessing.Pool(processCount)
         start_pos = 0
-        start_pos = 0
         for pos in range(processCount):
             end_pos = int(len(contours)/processCount * (pos+1))
             pool.apply_async(self.processPSD_subprocess, args=(contours, ' PID{:02d} '.format(pos+1) , start_pos, end_pos, verbose), callback = self.append_PSD_result)
@@ -482,12 +486,17 @@ class size_distribution():
             'surface':           list(map(self.getPoreSurface, bins)),
             'volume':            list(map(self.getPoreVolume, bins))
         }
+        if len(self.cld_df) > 0:
+            histogram = numpy.histogram(list(self.cld_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
+            self.histogram_CLD = histogram[0]
+        else:
+            self.histogram_CLD = []
 
-        histogram = numpy.histogram(list(self.cld_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
-        self.histogram_CLD = histogram[0]
-
-        histogram = numpy.histogram(list(self.psd_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
-        self.histogram_PSD = histogram[0]
+        if len(self.psd_df) > 0:
+            histogram = numpy.histogram(list(self.psd_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
+            self.histogram_PSD = histogram[0]
+        else:
+            self.histogram_PSD = []
 
     # max_value has to be given in the same unit as in self.scaling['unit']
     def get_histogram_list(self, dist_type, x_column, y_column='count'):
