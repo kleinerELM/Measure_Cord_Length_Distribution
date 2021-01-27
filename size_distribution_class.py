@@ -84,7 +84,7 @@ class size_distribution():
 
     def getPoreArea( self, diameter ):
         radius = diameter/2
-        return 4/3*(math.pi*(radius**3))
+        return (math.pi*(radius**2))
 
     def getPoreVolume( self, diameter=None ):#, area=None ):
         #if diameter == None: diameter = getPoreDiameter( area )

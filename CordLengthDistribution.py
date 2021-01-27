@@ -184,7 +184,7 @@ def processDirectionalCLD( im, scaling, directory, direction ):
 
 def getPoreArea( diameter ):
     radius = diameter/2
-    return 4/3*(math.pi*(radius**3))
+    return (math.pi*(radius**2))
 
 def getPoreVolume( diameter ):
     radius = diameter/2
