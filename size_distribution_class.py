@@ -51,6 +51,8 @@ def File_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], min_cld
 
     return size_distribution(os.path.dirname(filepath), file_name, file_extension, analyze_color_name=analyze_color_name, analyze_color_BGR=analyze_color_BGR, min_cld_length=min_cld_length, color_id=color_id, force_reprocessing=force_reprocessing, verbose=verbose)
 
+
+
 def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force_use_color=True, min_cld_length=1, force_reprocessing=False, verbose=False):
     print( "Please select the directory with the source image tiles.")#, end="\r" )
     workingDirectory = filedialog.askdirectory(title='Please select the image directory')
@@ -60,6 +62,8 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
 
     cld_df = None
     psd_df = None
+    cld_complete_histogram_df = None
+    psd_complete_histogram_df = None
 
     psd_df = None
 
@@ -107,13 +111,21 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
                     with open(psd_complete_histogram_csv, 'a', newline='', encoding='utf-8') as myfile:
                         wr = csv.writer(myfile)
                         wr.writerow(histogram)
+        if not psd_df is None:
+            cld_df.to_csv(workingDirectory + os.sep + 'CLD_complete.csv')
+            psd_df.to_csv(workingDirectory + os.sep + 'PSD_complete.csv')
+            print('finished processing of {} files in {:.2f} s'.format(count, (int(round(time.time() * 1000)) - startTime)/1000))
+            print('found {} pores and measured {} lines'.format(len(psd_df), len(cld_df)))
+            cld_complete_histogram_df = pd.read_csv( cld_complete_histogram_csv )
+            psd_complete_histogram_df = pd.read_csv( psd_complete_histogram_csv )
 
-        cld_df.to_csv(workingDirectory + os.sep + 'CLD_complete.csv')
-        psd_df.to_csv(workingDirectory + os.sep + 'PSD_complete.csv')
-        print('finished processing of {} files in {:.2f} s'.format(count, (int(round(time.time() * 1000)) - startTime)/1000))
-        print('found {} pores and measured {} lines'.format(len(psd_df), len(cld_df)))
-        cld_complete_histogram_df = pd.read_csv( cld_complete_histogram_csv )
-        psd_complete_histogram_df = pd.read_csv( psd_complete_histogram_csv )
+        hist = numpy.histogram(cld_df['area'], bins=bins, range=None, normed=None, weights=None, density=None)
+        print(hist)
+        print('-'*30)
+        #print( cld_complete_histogram_df )
+
+
+
         return sd, cld_complete_histogram_df, psd_complete_histogram_df
 
 #https://scipy-cookbook.readthedocs.io/items/SignalSmooth.html
@@ -269,16 +281,17 @@ class size_distribution():
         channel_count = self.get_image_channel_count()
 
         if channel_count == 3:
+            print('  detected color image')
             #self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
             self.load_binary_image_from_color(color=self.analyze_color_BGR, color_id=self.color_id)
         else:
+            print('  detected grayscale image')
             #self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
             self.load_binary_image_from_binary()
 
     def load_binary_image_from_binary(self):
         #binarizes an image
-        #img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        min_val = self.black #int( (self.ignore_Color+1)/2 ) if self.ignore_Color > self.analyze_Color else self.analyze_Color
+        min_val = self.black              #int( (self.ignore_Color+1)/2 ) if self.ignore_Color > self.analyze_Color else self.analyze_Color
         max_val = int( (self.white+1)/2 ) #int( (self.analyze_Color+1)/2 ) if self.analyze_Color > self.ignore_Color else self.ignore_Color
         _, self.thresh_img = cv2.threshold(self.img, min_val, max_val, cv2.THRESH_BINARY)
 
@@ -473,7 +486,6 @@ class size_distribution():
 
         return bins
 
-
     def process_histograms(self, max_value=None):
         if max_value == None: max_value=(self.scaling['x']*self.tile_width)
 
@@ -484,7 +496,8 @@ class size_distribution():
             'diameter':          bins,
             'area':              list(map(self.getPoreArea, bins)),
             'surface':           list(map(self.getPoreSurface, bins)),
-            'volume':            list(map(self.getPoreVolume, bins))
+            'volume':            list(map(self.getPoreVolume, bins)),
+            'pixel size':        self.scaling['x']
         }
         if len(self.cld_df) > 0:
             histogram = numpy.histogram(list(self.cld_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
@@ -539,7 +552,7 @@ class size_distribution():
             folder,                     # folder name without trailing path seperator / or \
             file_name,                  # file name without file extension
             file_extension,             # file extension including the dot ".TIF"
-            analyze_color_name='white', # color name of the binarized image, whi is used as phase to analyse (black or white)
+            analyze_color_name='white', # color name of the binarized image, which is used as phase to analyse (black or white)
             analyze_color_BGR=None,     # if a segmentation results in a multiphase image, a bgr color can be defined to create a binary image
             force_use_color=False,      # use the BGR color even if it does not exist
             color_id=0,                 # if the id of the color is known instead of the bgr color (usable to identify color values)
