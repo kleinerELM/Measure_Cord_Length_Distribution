@@ -19,7 +19,7 @@ def programInfo():
     print("# A Script to process the Cord Length Distribution of a #")
     print("# masked image                                          #")
     print("#                                                       #")
-    print("# © 2020 Florian Kleiner                                #")
+    print("# © 2021 Florian Kleiner                                #")
     print("#   Bauhaus-Universität Weimar                          #")
     print("#   F. A. Finger-Institut für Baustoffkunde             #")
     print("#                                                       #")
@@ -30,7 +30,7 @@ def programInfo():
 home_dir = os.path.dirname(os.path.realpath(__file__))
 
 ts_path = os.path.dirname( home_dir ) + os.sep + 'tiff_scaling' + os.sep
-ts_file = 'set_tiff_scaling'
+ts_file = 'extract_tiff_scaling'
 if ( os.path.isdir( ts_path ) and os.path.isfile( ts_path + ts_file + '.py' ) or os.path.isfile( home_dir + ts_file + '.py' ) ):
     if ( os.path.isdir( ts_path ) ): sys.path.insert( 1, ts_path )
     import extract_tiff_scaling as es
@@ -87,7 +87,7 @@ def processArguments():
             materialColor = 0
         elif opt in ("-p"):
             globMaskPagePos = int( arg ) -1
-            if ( globMaskPagePos < 0 ): 
+            if ( globMaskPagePos < 0 ):
                 globMaskPagePos = 0
         elif opt in ("-d"):
             print( 'show debugging output' )
@@ -177,9 +177,9 @@ def processDirectionalCLD( im, scaling, directory, direction ):
         print( "   {:.2f} of {:.2f} area-% were taken into account".format(100/imageArea*usedImageArea, 100/imageArea*fullPoreArea) )
         #print( str( usedImageArea ) + '  ' + str( fullPoreArea ) )
         headerLine = "lineCount" + "	" + "length [nm]" + "\n"#+ "	" + "volume fraction" + "\n"
-        resultFile = open(directory + os.sep + outputDirName + os.sep + filename + "." + direction + ".csv","w") 
-        resultFile.write( headerLine + resultCSV ) 
-        resultFile.close() #to change file access modes 
+        resultFile = open(directory + os.sep + outputDirName + os.sep + filename + "." + direction + ".csv","w")
+        resultFile.write( headerLine + resultCSV )
+        resultFile.close() #to change file access modes
     return resultCSV
 
 def getPoreArea( diameter ):
@@ -198,10 +198,10 @@ def processCLD( directory, filename ):
     global globMaskPagePos
     global outputDirName
     global sumResultCSV
-    
+
     scaling = es.autodetectScaling( filename, directory )
     pageCnt = 0
-    
+
     im = Image.open( directory + os.sep + filename )
     # check page count in image
     for i in enumerate(ImageSequence.Iterator(im)):
@@ -214,15 +214,15 @@ def processCLD( directory, filename ):
 
     # run analysis
     for i, page in enumerate(ImageSequence.Iterator(im)):
-        if ( i == maskPagePos ): 
+        if ( i == maskPagePos ):
             sumResultCSV += processDirectionalCLD(im, scaling, directory, 'horizontal')
             sumResultCSV += processDirectionalCLD(im, scaling, directory, 'vertical')
-            
+
             img = imageio.imread( directory + os.sep + filename )
             chords_x = ps.filters.apply_chords(img, axis=0, spacing=1, trim_edges=True)
             chords_y = ps.filters.apply_chords(img, axis=1, spacing=1, trim_edges=True)
             #chords_z = ps.filters.apply_chords(img, axis=2, spacing=1, trim_edges=True)
-            
+
             cld_x = ps.metrics.chord_length_distribution( chords_x, bins=100, log=True )
             cld_y = ps.metrics.chord_length_distribution( chords_y, bins=100, log=True )
             #cld_z = ps.metrics.chord_length_distribution( chords_z, bins=100, log=True )
@@ -231,8 +231,8 @@ def processCLD( directory, filename ):
             ax0.bar(cld_x.bin_centers,cld_x.relfreq,width=cld_x.bin_widths,edgecolor='k')
             ax1.bar(cld_y.bin_centers,cld_y.relfreq,width=cld_y.bin_widths,edgecolor='k')
             #ax2.bar(cld_z.bin_centers,cld_z.relfreq,width=cld_z.bin_widths,edgecolor='k')
-            
-            plt.savefig(directory + os.sep + filename + 'line_plot.svg')  
+
+            plt.savefig(directory + os.sep + filename + 'line_plot.svg')
     im.close()
     print()
 
@@ -270,9 +270,9 @@ if __name__ == '__main__':
 
     if ( sumResultCSV != '' ):
         headerLine = "lineCount" + "	" + "length [nm]\n"
-        resultFile = open(output_path + os.sep +"sumCLD.csv","w") 
-        resultFile.write( headerLine + sumResultCSV ) 
-        resultFile.close() #to change file access modes 
+        resultFile = open(output_path + os.sep +"sumCLD.csv","w")
+        resultFile.write( headerLine + sumResultCSV )
+        resultFile.close() #to change file access modes
 
     print( "Results can be found in directory:" )
     print( "  " +  output_path + "/\n" )

@@ -23,7 +23,7 @@ def programInfo():
     print("##########################################################")
     print("# Class to get PSD / CLDs of a single or multiple images #")
     print("#                                                        #")
-    print("# © 2020 Florian Kleiner                                 #")
+    print("# © 2021 Florian Kleiner                                 #")
     print("#   Bauhaus-Universität Weimar                           #")
     print("#   Finger-Institut für Baustoffkunde                    #")
     print("#                                                        #")
@@ -33,7 +33,7 @@ def programInfo():
 home_dir = os.path.dirname(os.path.realpath(__file__))
 
 ts_path = os.path.dirname( home_dir ) + os.sep + 'tiff_scaling' + os.sep
-ts_file = 'set_tiff_scaling'
+ts_file = 'extract_tiff_scaling'
 if ( os.path.isdir( ts_path ) and os.path.isfile( ts_path + ts_file + '.py' ) or os.path.isfile( home_dir + ts_file + '.py' ) ):
     if ( os.path.isdir( ts_path ) ): sys.path.insert( 1, ts_path )
     import extract_tiff_scaling as es
@@ -42,6 +42,8 @@ else:
     print( 'missing ' + ts_path + ts_file + '.py!' )
     print( 'download from https://github.com/kleinerELM/tiff_scaling' )
     sys.exit()
+
+import basic_functions_libary as basic
 
 def File_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], min_cld_length=1, color_id=0, force_reprocessing=False, verbose=False):
     print( "Please select the image to analyse.")
@@ -86,6 +88,8 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
                 position += 1
                 print('File {} of {}'.format(position, count))
                 sd = size_distribution(workingDirectory, file_name, file_extension, analyze_color_name=analyze_color_name, analyze_color_BGR=analyze_color_BGR, force_use_color=force_use_color, min_cld_length=min_cld_length, force_reprocessing=force_reprocessing, verbose=verbose)
+
+                cld_df_sum_hist, psd_df_sum_hist = sd.get_sum_histogram(nth_bin=4)
 
                 if not isinstance(cld_df, pd.DataFrame):
                     cld_df = sd.cld_df.copy()
@@ -206,21 +210,6 @@ class size_distribution():
             self.analyze_Color = self.black
             self.ignore_Color = self.white
 
-    def getPoreDiameter( self, area ):
-        return ( math.sqrt( area /math.pi )*2 )
-
-    def getPoreArea( self, diameter ):
-        radius = diameter/2
-        return (math.pi*(radius**2))
-
-    def getPoreVolume( self, diameter=None ):
-        radius = diameter/2
-        return 4/3*(math.pi*(radius**3))
-
-    def getPoreSurface( self, diameter=None ):
-        radius = diameter/2
-        return (4*math.pi*(radius**2))
-
     def get_scaled_width(self):
         return self.tile_width*self.scaling['x']
 
@@ -271,8 +260,13 @@ class size_distribution():
             self.channel_count = self.img.shape[-1]
         return self.channel_count
 
-    def load_binary_image(self, color=None):
+    def load_binary_image(self, color=None, round_scaling = 4):
         self.scaling = es.autodetectScaling( self.filename, self.folder )
+
+        if round_scaling > 0:
+            self.scaling['x'] = round( self.scaling['x'], round_scaling )
+            self.scaling['y'] = round( self.scaling['y'], round_scaling )
+
         self.img = cv2.imread( self.folder + os.sep + self.filename, -1 )
         if self.img is None:
             print( 'Error loading {}'.format(self.filename))
@@ -322,6 +316,8 @@ class size_distribution():
 
     def get_file(self, file_name, file_extension, verbose=False ):
         processID = ' '
+        self.base_filename = file_name
+        self.extension = file_extension[1:]
         self.filename = file_name + file_extension
         self.load_binary_image()
 
@@ -348,15 +344,15 @@ class size_distribution():
         result_row = False
         if area > 0 or diameter > 0:
             if area > 0:
-                diameter = self.getPoreDiameter(area)
+                diameter = basic.getPoreDiameter(area)
             else:
-                area = self.getPoreArea(diameter)
+                area = basic.getPoreArea(diameter)
             result_row = {
                 #'file_index':   file_index,
                 'diameter':     diameter,
                 'area' :        area,
-                'surface':      self.getPoreSurface(diameter=diameter),
-                'volume':       self.getPoreVolume(diameter=diameter)
+                'surface':      basic.getPoreSurface(diameter=diameter),
+                'volume':       basic.getPoreVolume(diameter=diameter)
             }
         return result_row
 
@@ -436,7 +432,7 @@ class size_distribution():
                             if ( length < max_b and length > self.min_cld_length ):
                                 lineCount += 1
                                 usedImageArea += length
-                                result_row = self.process_result_row( diameter=length )
+                                result_row = self.process_result_row( diameter=length*self.scaling['x'] )
                                 result.append(result_row)
                                 #self.cld_df = self.cld_df.append(result_row, ignore_index=True)
                         if ( borderReached ):
@@ -486,6 +482,21 @@ class size_distribution():
 
         return bins
 
+    # calculate the sum of eac value within a bin
+    # returns an one-dimensional np array according to the bin length
+    def get_bin_portion( self, measurements, bins, normed = False):
+        sum_bins = False
+        if not measurements is None and not bins is None:
+            bin_location = numpy.digitize(measurements, bins=bins)
+            sum_bins = numpy.zeros(len(bins))
+            for pos, bin_id in enumerate( bin_location ):
+                sum_bins[bin_id] += measurements[pos]
+            if normed:
+                sum_bins = sum_bins / sum_bins.max()
+        else:
+            print('ERROR! missing arguments on funcktion call')
+        return sum_bins
+
     def process_histograms(self, max_value=None):
         if max_value == None: max_value=(self.scaling['x']*self.tile_width)
 
@@ -494,19 +505,19 @@ class size_distribution():
         self.histogram_bins = {
             'unscaled_diameter': self.get_histogram_bins(max_value, as_pixel=True),
             'diameter':          bins,
-            'area':              list(map(self.getPoreArea, bins)),
-            'surface':           list(map(self.getPoreSurface, bins)),
-            'volume':            list(map(self.getPoreVolume, bins)),
+            'area':              list(map(basic.getPoreArea, bins)),
+            'surface':           list(map(basic.getPoreSurface, bins)),
+            'volume':            list(map(basic.getPoreVolume, bins)),
             'pixel size':        self.scaling['x']
         }
         if len(self.cld_df) > 0:
-            histogram = numpy.histogram(list(self.cld_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
+            histogram = numpy.histogram(list(self.cld_df['diameter']), bins=self.histogram_bins['diameter'])
             self.histogram_CLD = histogram[0]
         else:
             self.histogram_CLD = []
 
         if len(self.psd_df) > 0:
-            histogram = numpy.histogram(list(self.psd_df['diameter']), bins=self.histogram_bins['unscaled_diameter'])
+            histogram = numpy.histogram(list(self.psd_df['diameter']), bins=self.histogram_bins['diameter'])
             self.histogram_PSD = histogram[0]
         else:
             self.histogram_PSD = []
@@ -531,6 +542,45 @@ class size_distribution():
         last_value_id = next(i for i,v in enumerate(numpy.flip(histogram)) if v > 0) *-1
 
         return histogram[first_value_id:last_value_id], bins[first_value_id:last_value_id]
+
+    # get histogram, where eg all diameters within the bordes of a bin are summarized
+    def get_sum_histogram(self, nth_bin=4):
+        print('asdf-1')
+        columns = ['surface', 'volume', 'area', 'diameter']
+
+        full_bins = self.histogram_bins['diameter']
+        dia_bins = []
+        for i, item in enumerate(full_bins):
+            #if i == 0: print(full_bins[i])
+            if i % nth_bin == 0:
+                dia_bins.append(item)
+
+        psd_sum_hist = {'bins':dia_bins}
+        cld_sum_hist = {'bins':dia_bins}
+
+        for column in columns:
+
+            full_bins = self.histogram_bins[column]
+            bins = []
+            for i, item in enumerate(full_bins):
+                if i % nth_bin == 0:
+                    bins.append(item)
+
+            psd_sum_hist[column] = self.get_bin_portion( list(self.psd_df[column]), bins, normed = True)
+            cld_sum_hist[column] = self.get_bin_portion( list(self.cld_df[column]), bins, normed = True)
+
+        psd_df_sum_hist = pd.DataFrame(psd_sum_hist)
+        psd_df_sum_hist.set_index('bins',inplace = True)
+
+        cld_df_sum_hist = pd.DataFrame(cld_sum_hist)
+        cld_df_sum_hist.set_index('bins',inplace = True)
+
+        cld_df_sum_hist.to_csv(self.folder + os.sep + self.base_filename + '_cld_sum_hist.csv')
+        psd_df_sum_hist.to_csv(self.folder + os.sep + self.base_filename + '_psd_sum_hist.csv')
+
+        print('asdf-2')
+        return cld_df_sum_hist, psd_df_sum_hist
+
 
     def get_basic_values(self, column, df):
         max_vals = df.max(axis=0)
@@ -647,7 +697,7 @@ class size_distribution():
 ### actual program start
 if __name__ == '__main__':
     programInfo()
-
+    print('Ficken')
     #psd = singeFileProcess( verbose=True)
     Folder_Process(force_reprocessing=False, verbose=True)
 
