@@ -45,9 +45,10 @@ else:
 
 import basic_functions_libary as basic
 
-def File_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], min_cld_length=1, color_id=0, force_reprocessing=False, verbose=False):
-    print( "Please select the image to analyse.")
-    filepath = filedialog.askopenfilename( title='Please select the image to analyse.', filetypes=[("Tiff images", "*.tif")] )
+def File_Process(filepath=None, analyze_color_name='white',analyze_color_BGR=[0,0,255], min_cld_length=1, color_id=0, force_reprocessing=False, verbose=False):
+    if filepath == None:
+        print( "Please select the image to analyse.")
+        filepath = filedialog.askopenfilename( title='Please select the image to analyse.', filetypes=[("Tiff images", "*.tif")] )
     file_name, file_extension = os.path.splitext( filepath )
     file_name = os.path.basename(file_name)
 
@@ -89,8 +90,6 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
                 print('File {} of {}'.format(position, count))
                 sd = size_distribution(workingDirectory, file_name, file_extension, analyze_color_name=analyze_color_name, analyze_color_BGR=analyze_color_BGR, force_use_color=force_use_color, min_cld_length=min_cld_length, force_reprocessing=force_reprocessing, verbose=verbose)
 
-                cld_df_sum_hist, psd_df_sum_hist = sd.get_sum_histogram(nth_bin=4)
-
                 if not isinstance(cld_df, pd.DataFrame):
                     cld_df = sd.cld_df.copy()
                     psd_df = sd.psd_df.copy()
@@ -115,6 +114,9 @@ def Folder_Process(analyze_color_name='white',analyze_color_BGR=[0,0,255], force
                     with open(psd_complete_histogram_csv, 'a', newline='', encoding='utf-8') as myfile:
                         wr = csv.writer(myfile)
                         wr.writerow(histogram)
+
+                cld_df_sum_hist, psd_df_sum_hist = sd.get_sum_histogram(nth_bin=4)
+
         if not psd_df is None:
             cld_df.to_csv(workingDirectory + os.sep + 'CLD_complete.csv')
             psd_df.to_csv(workingDirectory + os.sep + 'PSD_complete.csv')
@@ -178,11 +180,11 @@ class size_distribution():
     processCount = (coreCount - 1) if coreCount > 1 else 1
 
     progressFactor = 500
-    image_count = 0
-    tile_width = 0
-    tile_height = 0
-    tile_area = 0
-    scaling = es.getEmptyScaling()
+    image_count    = 0
+    tile_width     = 0
+    tile_height    = 0
+    tile_area      = 0
+    scaling        = es.getEmptyScaling()
 
     channel_count = 1
     black = 0
@@ -194,34 +196,41 @@ class size_distribution():
     cld_result = []
     psd_result = []
 
-    histogram_CLD = []
-    histogram_PSD = []
+    histogram_CLD  = []
+    histogram_PSD  = []
     histogram_bins = [{'unscaled_diameter':[], 'diameter':[], 'area':[], 'surface':[], 'volume':[]}]
     #result_dataframe_columns = ['file_index', 'diameter', 'area', 'surface', 'volume']
 
-    folder = ''
     output_folder = ''
+    folder        = ''
+    UC            = es.unit()
+    color_name    = 'white'
 
     def set_color_to_be_analyzed( self, color_name ):
-        if color_name == "white":
-            self.analyze_Color = self.white
-            self.ignore_Color = self.black
-        else:
-            self.analyze_Color = self.black
-            self.ignore_Color = self.white
+        self.color_name    = color_name
+        self.analyze_Color = self.black#self.white
+        self.ignore_Color  = self.white#self.black
+        #if color_name == "white":
+        #    self.analyze_Color = self.white
+        #    self.ignore_Color = self.black
+        #else:
+        #    self.analyze_Color = self.black
+        #    self.ignore_Color = self.white
 
     def get_scaled_width(self):
-        return self.tile_width*self.scaling['x']
+        return self.UC.make_length_readable(self.tile_width*self.scaling['x'], self.scaling['unit'])
 
     def get_scaled_height(self):
-        return self.tile_height*self.scaling['y']
+        return self.UC.make_length_readable(self.tile_width*self.scaling['y'], self.scaling['unit'])
 
     def check_tile_dimension(self, height, width):
         if self.tile_width + self.tile_height == 0:
             self.tile_width = width
             self.tile_height = height
             self.tile_area = height*width
-            print('size: {:.2f} x {:.2f} {} / {} x {} px '.format(self.get_scaled_width(),self.get_scaled_height(),self.scaling['unit'],width,height))
+            w, u = self.get_scaled_width()
+            h, u = self.get_scaled_height()
+            print('size: {:.2f} x {:.2f} {} / {} x {} px '.format(w, h, u, width, height))
             return True
         else:
             if self.tile_width == width and self.tile_height == height:
@@ -233,20 +242,28 @@ class size_distribution():
 
     # plot the raw image next to the thresholded image
     def plot_images(self):
+
+        w, u = self.get_scaled_width()
+        h, u = self.get_scaled_height()
+
+        plot_axis_scaling = [0, w, 0, h]
+
         fig = plt.figure(figsize=(12,8), dpi= 100)
+
         fig.add_subplot(1, 2, 1)
-
-        plot_axis_scaling = [0,self.get_scaled_width(),0,self.get_scaled_height()]
-
         if self.channel_count == 3:
-            plt.imshow( numpy.array(cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)), extent=plot_axis_scaling );
+            plt.imshow( numpy.array(cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)), extent=plot_axis_scaling )
         else:
-            plt.imshow( self.img, extent=plot_axis_scaling, cmap='gray' );
-        plt.title('original: {} in {}'.format(self.filename, self.scaling['unit']), fontsize=8);
+            plt.imshow( self.img, extent=plot_axis_scaling, cmap='gray' )
+        plt.title('original: {} in {}'.format(self.filename, self.scaling['unit']), fontsize=8)
+        plt.xlabel('width in {}'.format(u))
+        plt.ylabel('height in {}'.format(u))
 
         fig.add_subplot(1, 2, 2)
         plt.imshow( self.thresh_img, extent=plot_axis_scaling, cmap='gray' );
-        plt.title('binarized: {} in {}'.format(self.filename, self.scaling['unit']), fontsize=8);
+        plt.title('binarized: {} in {}'.format(self.filename, self.scaling['unit']), fontsize=8)
+        plt.xlabel('width in {}'.format(u))
+        plt.ylabel('height in {}'.format(u))
 
     def get_available_colors(self):
         if len(self.available_colors) < 1:
@@ -283,11 +300,22 @@ class size_distribution():
             #self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
             self.load_binary_image_from_binary()
 
+    # make sure the image in binarized
     def load_binary_image_from_binary(self):
+        #if self.color_name == 'black': self.img = numpy.invert(self.img)#cv2.bitwise_not(self.img)
+        #thresh_algo = cv2.THRESH_BINARY
+        #min_val = 0
+        #max_val = 127
+
         #binarizes an image
-        min_val = self.black              #int( (self.ignore_Color+1)/2 ) if self.ignore_Color > self.analyze_Color else self.analyze_Color
-        max_val = int( (self.white+1)/2 ) #int( (self.analyze_Color+1)/2 ) if self.analyze_Color > self.ignore_Color else self.ignore_Color
-        _, self.thresh_img = cv2.threshold(self.img, min_val, max_val, cv2.THRESH_BINARY)
+        #min_val = self.ignore_Color#0   # self.black              #int( (self.ignore_Color+1)/2 ) if self.ignore_Color > self.analyze_Color else self.analyze_Color
+        #max_val = int(self.analyze_Color/2)#127 # int( (self.white+1)/2 ) #int( (self.analyze_Color+1)/2 ) if self.analyze_Color > self.ignore_Color else self.ignore_Color
+        #_, self.thresh_img = cv2.threshold(self.img, min_val, max_val, thresh_algo)
+
+        if self.color_name == 'black':
+            self.thresh_img = numpy.invert(self.img)#cv2.bitwise_not(self.img)
+        else:
+            self.thresh_img = self.img
 
     # Directly define a color to select or define a color_id.
     # The color id is not constant! The color order is defined by appearance within the image!
@@ -326,8 +354,11 @@ class size_distribution():
         height, width = self.img.shape[:2]
 
         if self.check_tile_dimension(height, width):
-            new_row = {'filename':file_name, 'height':height, 'width':width }
-        self.analyzed_files_DF = self.analyzed_files_DF.append(new_row, ignore_index=True)
+            #df_new_row = pd.DataFrame([file_name, height, width], columns = ['filename' , 'height', 'width'])
+            self.analyzed_files_DF.loc[len(self.analyzed_files_DF), self.analyzed_files_DF.columns] = file_name, height, width
+            #self.analyzed_files_DF = pd.concat([self.analyzed_files_DF, df_new_row])
+            #new_row = {'filename':file_name, 'height':height, 'width':width }
+            #self.analyzed_files_DF = self.analyzed_files_DF.append(new_row, ignore_index=True)
 
     def get_column_unit(self, column):
         power = 1
@@ -359,36 +390,38 @@ class size_distribution():
     def processPSD( self, img, processID = ' ', start_pos = None, end_pos = None, verbose=False ):
         processID = ' '
 
-        contours, _ = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours_raw, _ = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contour_areas = []
+        for c in contours_raw:
+            area = cv2.contourArea(c)
+            if (area > 0): contour_areas.append(area)
+        ignored_values = len(contours_raw) - len(contour_areas)
 
-        startTime = int(round(time.time() * 1000))
         processCount = self.processCount if self.processCount <=3 else 3
         pool = multiprocessing.Pool(processCount)
         start_pos = 0
         for pos in range(processCount):
-            end_pos = int(len(contours)/processCount * (pos+1))
-            pool.apply_async(self.processPSD_subprocess, args=(contours, ' PID{:02d} '.format(pos+1) , start_pos, end_pos, verbose), callback = self.append_PSD_result)
+            end_pos = int(len(contour_areas)/processCount * (pos+1))
+            pool.apply_async(self.processPSD_subprocess, args=(contour_areas, ' PID{:02d} '.format(pos+1) , start_pos, end_pos, verbose), callback = self.append_PSD_result)
             start_pos = end_pos
         pool.close()
         pool.join()
 
         self.psd_df = pd.DataFrame(self.psd_result)
         if verbose:
-            print( '{}Analysed particles: {}, ignored 0-values: {}, finished in {} ms'.format(processID, len(self.psd_result), len(contours)-len(self.psd_result), int(round(time.time() * 1000)) - startTime) )
+            print( '{} ignored 0-values: {}'.format( ignored_values ) )
 
-    def processPSD_subprocess(self, contours, processID, start_pos, end_pos, verbose=False):
+    def processPSD_subprocess(self, contour_areas, processID, start_pos, end_pos, verbose=False):
         #if verbose: print( '{}processing pore size distribution (pore {}-{})'.format(processID, start_pos, end_pos) )
         #file_index = int(len(self.analyzed_files_DF)-1)
         result_list = []
         for i in range(start_pos, end_pos):
-            result_row = self.process_result_row( area=cv2.contourArea(contours[i]) )
+            result_row = self.process_result_row( area=contour_areas[i]*(self.scaling['x'] * self.scaling['y']) )
             if result_row != False:
                 result_list.append( result_row )
         return result_list
 
     def process_directional_CLD( self, img, direction, processID = ' ', start_pos = None, end_pos = None, verbose=False):
-        #file_index = int(len(self.analyzed_files_DF)-1)
-
         ignoreBorder = True
         minLength = 1
 
@@ -471,48 +504,65 @@ class size_distribution():
 
     # max_value has to be given in the same unit as in self.scaling['unit']
     def get_histogram_bins(self, max_value, step=1, as_pixel=False, verbose=False):
-        bin_count = round( max_value/self.scaling['x']+2 )
+        bin_max = round( max_value/self.scaling['x']+2 )
 
         if self.scaling['unit'] == 'px': as_pixel = True
         if as_pixel:
             if verbose: print('  bins are scaled as px!')
-            bins = [i for i in range(0,bin_count,step)]
+            bins = [i for i in range(0,bin_max,step)]
         else:
-            bins = [round(i*self.scaling['x'],4) for i in range(0,bin_count,step)]
+            bins = [i*self.scaling['x'] for i in range(0,bin_max,step)] #round(i*self.scaling['x'],4)
 
         return bins
 
-    # calculate the sum of eac value within a bin
+    # calculate the sum of each value within a bin
     # returns an one-dimensional np array according to the bin length
     def get_bin_portion( self, measurements, bins, normed = False):
         sum_bins = False
         if not measurements is None and not bins is None:
             bin_location = numpy.digitize(measurements, bins=bins)
-            sum_bins = numpy.zeros(len(bins))
+            sum_bins     = numpy.zeros(len(bins))
+            sum_tmp_arr  = numpy.zeros(len(bins))
             for pos, bin_id in enumerate( bin_location ):
-                sum_bins[bin_id] += measurements[pos]
-            if normed:
-                sum_bins = sum_bins / sum_bins.max()
-        else:
-            print('ERROR! missing arguments on funcktion call')
-        return sum_bins
+                    sum_bins[bin_id-1] += measurements[pos]
 
-    def process_histograms(self, max_value=None):
+            # sum function
+            sum_tmp = 0
+            for pos, bin_id in enumerate( bins ):
+                sum_tmp += sum_bins[pos]
+                sum_tmp_arr[pos] = sum_tmp
+
+            if normed:
+                sum_bins    = sum_bins    / sum_bins.max()
+                sum_tmp_arr = sum_tmp_arr / sum_tmp_arr.max()
+
+        else:
+            print('ERROR! missing arguments on function call')
+        return sum_bins, sum_tmp_arr
+
+    def process_histograms(self, bin_step=1, max_value=None):
+        print('processing histograms')
         if max_value == None: max_value=(self.scaling['x']*self.tile_width)
 
         # scale the bins
-        bins = self.get_histogram_bins(max_value)
+        bins = self.get_histogram_bins(max_value, step=bin_step)
+        unscaled_bins = self.get_histogram_bins(max_value, step=bin_step, as_pixel=True)
         self.histogram_bins = {
-            'unscaled_diameter': self.get_histogram_bins(max_value, as_pixel=True),
+            'unscaled_diameter': unscaled_bins,
             'diameter':          bins,
-            'area':              list(map(basic.getPoreArea, bins)),
+            'area':              list(map(basic.getPoreArea,    bins)),
             'surface':           list(map(basic.getPoreSurface, bins)),
-            'volume':            list(map(basic.getPoreVolume, bins)),
+            'volume':            list(map(basic.getPoreVolume,  bins)),
             'pixel size':        self.scaling['x']
         }
+
+        print( 'using {} bins'.format( len( bins ) ) )
+
         if len(self.cld_df) > 0:
             histogram = numpy.histogram(list(self.cld_df['diameter']), bins=self.histogram_bins['diameter'])
-            self.histogram_CLD = histogram[0]
+            #print(histogram[0].max())
+            self.histogram_CLD = histogram[0]#pd.DataFrame( histogram[0] )#, ['frequency'] )
+            #self.histogram_CLD[0] /= histogram[0].max()
         else:
             self.histogram_CLD = []
 
@@ -532,7 +582,7 @@ class size_distribution():
             y_bin = self.histogram_bins[ y_column ]
             histogram = histogram * numpy.array(y_bin[1:])
 
-        return histogram, self.histogram_bins[x_column]
+        return histogram, self.histogram_bins[x_column][1:] # [1:] <- ist das korrekt??!?!?
 
     def get_cleaned_histogram_list(self, dist_type, x_column, y_column):
 
@@ -543,9 +593,31 @@ class size_distribution():
 
         return histogram[first_value_id:last_value_id], bins[first_value_id:last_value_id]
 
-    # get histogram, where eg all diameters within the bordes of a bin are summarized
+    def plot_histogram(self, dist_type='cld',column="diameter", normed=True, cleaned=False, title=''):
+        if cleaned:
+            hist, bins = self.get_cleaned_histogram_list(dist_type, column, 'count')#
+        else:
+            hist, bins = self.get_histogram_list(dist_type, column, 'count')
+        if title == '': title = self.filename
+        dia_title = 'Chord length distribution of "{}"'.format(title) if dist_type == 'cld' else 'Pore size distribution of "{}"'.format(title)
+        df = pd.DataFrame(bins)
+        df.set_index(0, inplace = True)
+        cumsum_col_title = '{} cumulative sum'.format(column)
+
+        #print(len(df), hist, column)
+        df[column] = hist
+        df[cumsum_col_title] = df[column].cumsum(axis = 0)
+        ylabel='frequency'
+        if normed:
+            df[column]           = df[column]           / df[column].max()
+            df[cumsum_col_title] = df[cumsum_col_title] / df[cumsum_col_title].max()
+            ylabel='normed frequency'
+
+        df.plot( title=dia_title, logx=True, xlabel='{} in {}'.format(column, self.scaling['unit']), ylabel=ylabel ) #xlim=[ df.index[0], df.index[-1]],
+        df.to_csv( self.folder + os.sep + self.base_filename +'_'+ dist_type + '_' + title + '_hist.csv' )
+
+    # get histogram, where eg all diameters within the borders of a bin are summarized
     def get_sum_histogram(self, nth_bin=4):
-        print('asdf-1')
         columns = ['surface', 'volume', 'area', 'diameter']
 
         full_bins = self.histogram_bins['diameter']
@@ -554,20 +626,23 @@ class size_distribution():
             #if i == 0: print(full_bins[i])
             if i % nth_bin == 0:
                 dia_bins.append(item)
-
+        print('first element', dia_bins[0], dia_bins[-1])
         psd_sum_hist = {'bins':dia_bins}
         cld_sum_hist = {'bins':dia_bins}
+        print( len(psd_sum_hist['bins']) )
 
         for column in columns:
 
-            full_bins = self.histogram_bins[column]
-            bins = []
-            for i, item in enumerate(full_bins):
-                if i % nth_bin == 0:
-                    bins.append(item)
+            #full_bins = self.histogram_bins[column]
+            #bins = []
+            #for i, item in enumerate(full_bins):
+            #    if i % nth_bin == 0:
+            #        bins.append(item)
 
-            psd_sum_hist[column] = self.get_bin_portion( list(self.psd_df[column]), bins, normed = True)
-            cld_sum_hist[column] = self.get_bin_portion( list(self.cld_df[column]), bins, normed = True)
+            psd_sum_hist[column], psd_sum_hist[column+'_sum'] = self.get_bin_portion( list(self.psd_df[column]), dia_bins, normed = True )
+            cld_sum_hist[column], cld_sum_hist[column+'_sum'] = self.get_bin_portion( list(self.cld_df[column]), dia_bins, normed = True )
+
+            #print(len(psd_sum_hist[column]), 'a', len(dia_bins) )
 
         psd_df_sum_hist = pd.DataFrame(psd_sum_hist)
         psd_df_sum_hist.set_index('bins',inplace = True)
@@ -578,7 +653,7 @@ class size_distribution():
         cld_df_sum_hist.to_csv(self.folder + os.sep + self.base_filename + '_cld_sum_hist.csv')
         psd_df_sum_hist.to_csv(self.folder + os.sep + self.base_filename + '_psd_sum_hist.csv')
 
-        print('asdf-2')
+        #print('asdf-2')
         return cld_df_sum_hist, psd_df_sum_hist
 
 
@@ -616,6 +691,7 @@ class size_distribution():
         self.set_color_to_be_analyzed( analyze_color_name )
 
         self.folder = folder
+        self.filename = file_name
         self.output_folder = self.folder + os.sep + 'CSV' + os.sep
         if not os.path.isdir( self.output_folder ): os.mkdir(self.output_folder)
         self.target_folder = os.path.abspath(os.path.join(self.folder, os.pardir))
@@ -631,6 +707,8 @@ class size_distribution():
         self.force_use_color = force_use_color
         self.get_file(file_name, file_extension, verbose=verbose)
 
+        startTime = int(round(time.time() * 1000))
+
         # pore size distribution
         if not os.path.isfile( psd_csv_path ) or force_reprocessing:
             #self.psd_df = pd.DataFrame(columns = self.result_dataframe_columns)
@@ -640,21 +718,33 @@ class size_distribution():
             self.psd_df = pd.read_csv( psd_csv_path, index_col=0 )
             print('loaded psd csv')
 
-        print('-'*50)
+        if verbose:
+            used_time = int(round(time.time() * 1000)) - startTime
+            height, width = self.img.shape[:2]
+            pore_area_portion = 100/(height * width * self.scaling['x'] * self.scaling['y'] ) * self.psd_df.area.sum()
+            print( 'Analysed particles: {} ({:.2f} area-%), finished in {} ms'.format(
+                        len(self.psd_result),
+                        pore_area_portion,
+                        used_time
+                    )
+                 )
+
+        print('-'*50) # PSD is done - go to CLD
+
+        startTime = int(round(time.time() * 1000))
         # chord length distribution
         if not os.path.isfile( cld_csv_path ) or force_reprocessing:
             self.min_cld_length = min_cld_length
-            #self.cld_df = pd.DataFrame(columns = self.result_dataframe_columns)
 
-            # There is a time penalty using to many threads. The loading time of the images and libaries seem to hav a huge imact on the multithreading performance.
-            # Therefore, the horizontal and vertical CLD is calculated parallel in few threads instead a single direction on all available threads!
+            # There is a time penalty using too many threads. The loading time of the images and libraries
+            # seem to have a huge impact on the multithreading performance. Therefore, the horizontal and vertical CLD
+            # is calculated in parallel in a few threads instead a single direction on all available threads!
             # Up to two cores will idle in this time.
             processes_per_direction = int(self.processCount/2)
             process_range = range(processes_per_direction) if processes_per_direction > 1 else range(1)
-            pool_size = processes_per_direction*2 if processes_per_direction > 1 else 1
+            pool_size     = processes_per_direction*2 if processes_per_direction > 1 else 1
 
             print( 'processing cld using {} threads'.format(pool_size) )
-            startTime = int(round(time.time() * 1000))
             pool = multiprocessing.Pool( pool_size )
             h_start_pos = 0
             v_start_pos = 0
@@ -662,34 +752,48 @@ class size_distribution():
             for pos in process_range:
                 pid += 1
                 h_end_pos = int(self.tile_height/processes_per_direction * (pos+1))
-                pool.apply_async(self.process_directional_CLD, args=(self.thresh_img, 'horizontal', ' PID{:02d} '.format(pid) , h_start_pos, h_end_pos, verbose), callback = self.append_CLD_result)
+                pool.apply_async(self.process_directional_CLD,
+                                 args=( self.thresh_img,
+                                        'horizontal',
+                                        ' PID{:02d} '.format(pid),
+                                        h_start_pos,
+                                        h_end_pos,
+                                        verbose),
+                                 callback = self.append_CLD_result)
                 h_start_pos = h_end_pos
 
                 pid += 1
                 v_end_pos = int(self.tile_width/processes_per_direction * (pos+1))
-                pool.apply_async(self.process_directional_CLD, args=(self.thresh_img, 'vertical', ' PID{:02d} '.format(pid) , v_start_pos, v_end_pos, verbose), callback = self.append_CLD_result)
+                pool.apply_async(self.process_directional_CLD,
+                                 args=( self.thresh_img,
+                                        'vertical',
+                                        ' PID{:02d} '.format(pid) ,
+                                        v_start_pos,
+                                        v_end_pos,
+                                        verbose),
+                                 callback = self.append_CLD_result)
                 v_start_pos = v_end_pos
             pool.close()
             pool.join()
-            print( 'finished processing {} lines in {} ms'.format(len(self.cld_result), int(round(time.time() * 1000)) - startTime) )
-
-            print('-'*50)
 
             self.cld_df = pd.DataFrame(self.cld_result)
-
-            #self.process_directional_CLD(self.thresh_img, 'horizontal', verbose=verbose)
-            #print('-'*50)
-            #self.process_directional_CLD(self.thresh_img, 'vertical', verbose=verbose)
-            #print('-'*50)
-
             self.cld_df.to_csv(cld_csv_path)
         else:
+            print('loading existing cld csv')
             self.cld_df = pd.read_csv( cld_csv_path, index_col=0 )
-            print('loaded cld csv')
+
+        cld_cnt = len(self.cld_df)
+        endTime    = int(round(time.time() * 1000)) - startTime
+        if cld_cnt == 0:
+            print( 'ERROR! No chord lengths found within {} ms!'.format( endTime ) )
+        else:
+            print( 'finished processing {} lines in {} ms'.format( cld_cnt, endTime ) )
+
+        if self.scaling['unit'] == 'px': print('WARNING! Image is scaled in pixel!!!')
+
+        print('-'*50)
 
         self.process_histograms()
-
-        if self.scaling['unit'] == 'px': print('scaled as PX!!!')
 
         #self.get_porespy_CLD(self.thresh_img)
         #print('-'*50)
@@ -697,7 +801,7 @@ class size_distribution():
 ### actual program start
 if __name__ == '__main__':
     programInfo()
-    print('Ficken')
+    print('Starte Ordnerverarbeitung')
     #psd = singeFileProcess( verbose=True)
     Folder_Process(force_reprocessing=False, verbose=True)
 
